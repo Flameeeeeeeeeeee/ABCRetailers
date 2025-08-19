@@ -1,0 +1,20 @@
+# Build folders
+**/.vs/
+bin/
+obj/
+
+
+# User-specific files
+*.user
+*.suo
+
+# Logs
+*.log
+
+# Config/secrets
+appsettings.*.json
+.env
+
+# System files
+.DS_Store
+Thumbs.db
