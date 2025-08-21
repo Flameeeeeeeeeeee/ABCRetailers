@@ -10,14 +10,14 @@ namespace ABCRetailers.Models
 
         public string PartitionKey { get; set; } = "Order";
 
-        public string Rowkey { get; set; } = Guid.NewGuid().ToString();
+        public string RowKey { get; set; } = Guid.NewGuid().ToString();
 
         public DateTimeOffset? Timestamp { get; set; }
 
         public ETag ETag { get; set; }
         [Display(Name = "Order ID")]
 
-        public string OrderId => Rowkey;
+        public string OrderId => RowKey;
         [Required]
         [Display(Name = "Customer")]
 

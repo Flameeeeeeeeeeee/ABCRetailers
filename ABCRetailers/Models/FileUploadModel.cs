@@ -9,7 +9,7 @@ namespace ABCRetailers.Models
         public IFormFile ProofOfPayment { get; set; }
 
         [Display(Name = "Order ID")]
-        public string? Orderid { get; set; }
+        public string? OrderId { get; set; }
 
         [Display(Name = "Customer Name")]
         public string? CustomerName { get; set; }

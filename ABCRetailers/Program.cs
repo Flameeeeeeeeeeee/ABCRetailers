@@ -1,4 +1,7 @@
-namespace ABCRetailers
+using ABCRetailers.Services;
+using System.Globalization;
+
+    namespace ABCRetailers
 {
     public class Program
     {
@@ -9,7 +12,18 @@ namespace ABCRetailers
             // Add services to the container.
             builder.Services.AddControllersWithViews();
 
+            //Register Azure Storage Services
+            builder.Services.AddScoped<IAzureStorageService, AzureStorageService>();
+
+            //Add logging
+            builder.Services.AddLogging();
+
             var app = builder.Build();
+
+            //Set the culture for decimal handling (Fixes price issue)
+            var culture = new CultureInfo("en-US");
+            CultureInfo.DefaultThreadCurrentCulture = culture;
+            CultureInfo.DefaultThreadCurrentUICulture = culture;
 
             // Configure the HTTP request pipeline.
             if (!app.Environment.IsDevelopment())
@@ -20,15 +34,16 @@ namespace ABCRetailers
             }
 
             app.UseHttpsRedirection();
+            app.UseStaticFiles();
             app.UseRouting();
-
             app.UseAuthorization();
-
-            app.MapStaticAssets();
             app.MapControllerRoute(
+
+
+
                 name: "default",
-                pattern: "{controller=Home}/{action=Index}/{id?}")
-                .WithStaticAssets();
+                pattern: "{controller=Home}/{action=Index}/{id?}");
+               
 
             app.Run();
         }
