@@ -34,9 +34,9 @@ namespace ABCRetailers.Controllers
         public async Task<IActionResult> Create(Product product, IFormFile? imageFile)
         {
             // Manual price parsing to fix binding issue
-            if (Request.Form.TryGetValue("Price", out var priceFormValue))
+            if (Request.Form.TryGetValue("PriceString", out var priceFormValue)) // potential issue
             {
-                _logger.LogInformation("Raw price from form: '{PriceFormValue}", priceFormValue.ToString());
+                _logger.LogInformation("Raw price from form: '{PriceFormValue}'", priceFormValue.ToString());
 
                 if (decimal.TryParse(priceFormValue, out var parsedPrice))
                 {
@@ -87,7 +87,7 @@ namespace ABCRetailers.Controllers
                 return NotFound();
             }
 
-            var product = await _storageService.GetEntityAsync<Product>("product id", id);
+            var product = await _storageService.GetEntityAsync<Product>("Product", id);
             if (product == null)
             {
                 return NotFound();
@@ -101,7 +101,7 @@ namespace ABCRetailers.Controllers
         public async Task<IActionResult> Edit(Product product, IFormFile? imageFile)
         {
             // Manual price parsing for edit too
-            if (Request.Form.TryGetValue("Price", out var priceFormValue))
+            if (Request.Form.TryGetValue("PriceString", out var priceFormValue))//potential issue
             {
                 if (decimal.TryParse(priceFormValue, out var parsedPrice))
                 {
@@ -153,7 +153,7 @@ namespace ABCRetailers.Controllers
                 {
                     try
                     {
-                        await _storageService.DeleteEntityAsync<Product>("product", id);
+                        await _storageService.DeleteEntityAsync<Product>("Product", id);
                         TempData["success"] = "product deleted successfully";
                     }
                     catch (Exception ex)

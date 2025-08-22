@@ -54,7 +54,7 @@ namespace ABCRetailers.Controllers
                 return NotFound();
             }
             var customer = await _storageService.GetEntityAsync<Customer>("Customer", id);
-            if (customer != null)
+            if (customer == null)
             {
                 return NotFound();
             }
@@ -70,7 +70,22 @@ namespace ABCRetailers.Controllers
                 try
                 {
                     //update entity
-                    await _storageService.UpdateEntityAsync(customer);
+                    var originalCustomer = await _storageService.GetEntityAsync<Customer>("Customer", customer.RowKey); //retrives orignal customer entity, so it can be edited
+                    if (originalCustomer == null)
+                    {
+                        return NotFound();
+                    }
+                    // Update fields (model defined data)
+                    originalCustomer.Name = customer.Name;
+                    originalCustomer.Surname = customer.Surname;
+                    originalCustomer.Email = customer.Email;
+                    originalCustomer.Username = customer.Username;
+                    originalCustomer.ShippingAddress = customer.ShippingAddress; //edit post, so we give it the go ahead to change the values in table using the newly entered ones
+                    
+
+                    // Update in Azure Table
+                    await _storageService.UpdateEntityAsync(originalCustomer); //updates the customer (saves)
+
                     TempData["Success"] = "Customer updated successfully!";
                     return RedirectToAction(nameof(Index));
                 }

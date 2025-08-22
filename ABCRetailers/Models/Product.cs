@@ -26,7 +26,8 @@ namespace ABCRetailers.Models
         [Display(Name = "Description")]
 
         public string Description { get; set; } = string.Empty;
-        [Required(ErrorMessage = "Price is required")][Display(Name = "Price")]
+        [Required(ErrorMessage = "Price is required")]
+        [Display(Name = "Price")]
 
         public string PriceString { get; set; } = string.Empty;
         [Display(Name = "Price")]

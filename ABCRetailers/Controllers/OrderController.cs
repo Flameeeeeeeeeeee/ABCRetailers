@@ -4,6 +4,7 @@ using ABCRetailers.Models.ViewModels;
 using ABCRetailers.Services;
 using System.Text.Json;
 using Microsoft.AspNetCore.OutputCaching;
+using System.Runtime.CompilerServices;
 
 
 namespace ABCRetailers.Controllers
@@ -39,7 +40,7 @@ namespace ABCRetailers.Controllers
         public async Task<IActionResult> Create(OrderCreateViewModel model)
         {
             // Check if the model is valid based on data annotations.
-            if (!ModelState.IsValid)
+            if (ModelState.IsValid)
             {
                 try
                 {
@@ -64,6 +65,7 @@ namespace ABCRetailers.Controllers
                     }
 
                     // Create a new Order object.
+                    var orderDateUtc = DateTime.SpecifyKind(model.OrderDate, DateTimeKind.Utc);//attempt to fix UTC exception
                     var order = new Order
                     {
 
@@ -71,7 +73,7 @@ namespace ABCRetailers.Controllers
                         Username = customer.Username,
                         ProductId = model.ProductId,
                         ProductName = product.ProductName,
-                        OrderDate = model.OrderDate,
+                        OrderDate = orderDateUtc,//attempt to fix UTC exception
                         Quantity = model.Quantity,
                         UnitPrice = product.Price,
                         TotalPrice = product.Price * model.Quantity,
@@ -162,11 +164,19 @@ namespace ABCRetailers.Controllers
         public async Task<IActionResult> Edit(Order order)
         {
 
-            if (!ModelState.IsValid)
+            if (ModelState.IsValid)
             {
                 try
                 {
-                    await _storageService.UpdateEntityAsync(order);
+                    var originalOrder = await _storageService.GetEntityAsync<Order>("Order",order.RowKey);
+                    if (originalOrder == null)
+                        return NotFound();
+
+                    originalOrder.Status = order.Status;
+                    originalOrder.Quantity = order.Quantity;
+                    originalOrder.TotalPrice = order.UnitPrice * order.Quantity; // recalc total if quantity changed
+
+                    await _storageService.UpdateEntityAsync(originalOrder);
                     TempData["Success"] = "Order updated successfully!";
                     return RedirectToAction(nameof(Index));
                 }
@@ -199,7 +209,7 @@ namespace ABCRetailers.Controllers
             try
             {
                 var product = await _storageService.GetEntityAsync<Product>("Product", productId);
-                if (product == null)
+                if (product != null)
                 {
                     return Json(new
                     {
