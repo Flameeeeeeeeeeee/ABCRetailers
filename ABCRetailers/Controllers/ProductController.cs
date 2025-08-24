@@ -1,4 +1,5 @@
-﻿using ABCRetailers.Models;
+﻿using System.Globalization;
+using ABCRetailers.Models;
 using ABCRetailers.Services;
 using Azure.Storage.Blobs.Models;
 using Microsoft.AspNetCore.Mvc;
@@ -34,7 +35,7 @@ namespace ABCRetailers.Controllers
         public async Task<IActionResult> Create(Product product, IFormFile? imageFile)
         {
             // Manual price parsing to fix binding issue
-            if (Request.Form.TryGetValue("PriceString", out var priceFormValue)) // potential issue
+            if (Request.Form.TryGetValue("Price", out var priceFormValue)) // potential issue
             {
                 _logger.LogInformation("Raw price from form: '{PriceFormValue}'", priceFormValue.ToString());
 
@@ -49,7 +50,8 @@ namespace ABCRetailers.Controllers
                 }
             }
             _logger.LogInformation("Final product price: {Price}", product.Price);
-
+            // attempt to fix price issue
+            //product.PriceString = product.Price.ToString("0.00", CultureInfo.InvariantCulture);
             if (ModelState.IsValid)
             {
                 try
@@ -68,6 +70,14 @@ namespace ABCRetailers.Controllers
                     }
 
                     await _storageService.AddEntityAsync(product);
+
+                    //roundtrip logging
+                    //var roundTrip = await _storageService.GetEntityAsync<Product>("Product", product.RowKey);
+                    //_logger.LogInformation( "Round-trip check: PriceString='{PriceString}' parsed as Price={Price}",roundTrip.PriceString, roundTrip.Price); //logging for price isssue
+
+                    
+                    
+
                     TempData["Success"] = $"Product '{product.ProductName}' created successfully with price {product.Price:C}!";
                     return RedirectToAction(nameof(Index));
                 }
@@ -101,7 +111,7 @@ namespace ABCRetailers.Controllers
         public async Task<IActionResult> Edit(Product product, IFormFile? imageFile)
         {
             // Manual price parsing for edit too
-            if (Request.Form.TryGetValue("PriceString", out var priceFormValue))//potential issue
+            if (Request.Form.TryGetValue("Price", out var priceFormValue))//potential issue
             {
                 if (decimal.TryParse(priceFormValue, out var parsedPrice))
                 {
@@ -126,15 +136,21 @@ namespace ABCRetailers.Controllers
                             originalProduct.Description = product.Description;
                             originalProduct.Price = product.Price;
                             originalProduct.StockAvailable = product.StockAvailable;
-                            // Upload new image if provided
-                            if (imageFile != null && imageFile.Length > 0)
-                            {
+                    //attempt to fix issue with price
+                    //originalProduct.PriceString = originalProduct.Price.ToString("0.00", CultureInfo.InvariantCulture);
 
-                                var imageUrl = await _storageService.UploadImageAsync(imageFile, "product-images");
-                                originalProduct.ImageUrl = imageUrl;
-                            }
+                    // Upload new image if provided
+                    if (imageFile != null && imageFile.Length > 0)
+                    {
 
-                            await _storageService.UpdateEntityAsync(originalProduct);
+                        var imageUrl = await _storageService.UploadImageAsync(imageFile, "product-images");
+                        originalProduct.ImageUrl = imageUrl;
+                    }
+                    _logger.LogInformation("Updating Product: Name={ProductName}, Price={Price}, PriceString={PriceString}", originalProduct.ProductName, originalProduct.Price, originalProduct.PriceString);
+
+
+
+                    await _storageService.UpdateEntityAsync(originalProduct);
                             TempData["Success"] = "Product updated successfully!";
                             return RedirectToAction(nameof(Index));
                         }
