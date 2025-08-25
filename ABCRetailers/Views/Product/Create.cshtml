@@ -53,17 +53,17 @@
 
                     <div class="form-group mb-3">
 
-                        <label asp-for="PriceString" class="form-label">Price</label>
+                        <label asp-for="Price" class="form-label">Price</label>
 
                         <div class="input-group">
 
                             <span class="input-group-text">$</span>
 
-                            <input asp-for="PriceString" name="PriceString" class="form-control" type="text" placeholder="29.99" required />
+                            <input asp-for="Price" name="Price" class="form-control" type="text" placeholder="29.99" required />
 
                         </div>
 
-                        <span asp-validation-for="PriceString" class="text-danger"></span>
+                        <span asp-validation-for="Price" class="text-danger"></span>
 
                         <div class="form-text">Enter price in dollars (e.g., 29.99) - Required field</div>
 

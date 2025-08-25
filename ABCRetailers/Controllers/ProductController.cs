@@ -39,7 +39,7 @@ namespace ABCRetailers.Controllers
             {
                 _logger.LogInformation("Raw price from form: '{PriceFormValue}'", priceFormValue.ToString());
 
-                if (decimal.TryParse(priceFormValue, out var parsedPrice))
+                if (double.TryParse(priceFormValue, out var parsedPrice))
                 {
                     product.Price = parsedPrice;
                     _logger.LogInformation("Successfully parsed price: {Price}", parsedPrice);
@@ -71,9 +71,7 @@ namespace ABCRetailers.Controllers
 
                     await _storageService.AddEntityAsync(product);
 
-                    //roundtrip logging
-                    //var roundTrip = await _storageService.GetEntityAsync<Product>("Product", product.RowKey);
-                    //_logger.LogInformation( "Round-trip check: PriceString='{PriceString}' parsed as Price={Price}",roundTrip.PriceString, roundTrip.Price); //logging for price isssue
+                   
 
                     
                     
@@ -105,37 +103,42 @@ namespace ABCRetailers.Controllers
             return View(product);
         }
 
+        
+
         [HttpPost]
         [ValidateAntiForgeryToken]
-
         public async Task<IActionResult> Edit(Product product, IFormFile? imageFile)
         {
-            // Manual price parsing for edit too
-            if (Request.Form.TryGetValue("Price", out var priceFormValue))//potential issue
+
+            
+
+
+            // Manual price parsing for edit 
+            if (Request.Form.TryGetValue("Price", out var priceFormValue))
             {
-                if (decimal.TryParse(priceFormValue, out var parsedPrice))
+                if (double.TryParse(priceFormValue, out var parsedPrice))
                 {
                     product.Price = parsedPrice;
                     _logger.LogInformation("Edit: Successfully parsed price: {Price}", parsedPrice);
                 }
             }
-                if (ModelState.IsValid)
+            if (ModelState.IsValid)
+            {
+                try
+                {
+                    // Get the original product to preserve ETag
+                    var originalProduct = await _storageService.GetEntityAsync<Product>("Product", product.RowKey);
+                    if (originalProduct == null)
+
                     {
-                        try
-                        {
-                            // Get the original product to preserve ETag
-                            var originalProduct = await _storageService.GetEntityAsync<Product>("Product", product.RowKey);
-                            if (originalProduct == null)
+                        return NotFound();
+                    }
 
-                            {
-                                return NotFound();
-                            }
-
-                            // Update properties but keep the original ETag original Product. ProductName = product. ProductName;
-                            originalProduct.ProductName = product.ProductName;
-                            originalProduct.Description = product.Description;
-                            originalProduct.Price = product.Price;
-                            originalProduct.StockAvailable = product.StockAvailable;
+                    // Update properties but keep the original ETag original Product. ProductName = product. ProductName;
+                    originalProduct.ProductName = product.ProductName;
+                    originalProduct.Description = product.Description;
+                    originalProduct.Price = product.Price;
+                    originalProduct.StockAvailable = product.StockAvailable;
                     //attempt to fix issue with price
                     //originalProduct.PriceString = originalProduct.Price.ToString("0.00", CultureInfo.InvariantCulture);
 
@@ -146,24 +149,25 @@ namespace ABCRetailers.Controllers
                         var imageUrl = await _storageService.UploadImageAsync(imageFile, "product-images");
                         originalProduct.ImageUrl = imageUrl;
                     }
-                    _logger.LogInformation("Updating Product: Name={ProductName}, Price={Price}, PriceString={PriceString}", originalProduct.ProductName, originalProduct.Price, originalProduct.PriceString);
+                    //_logger.LogInformation("Updating Product: Name={ProductName}, Price={Price}", originalProduct.ProductName, originalProduct.Price);
 
 
 
                     await _storageService.UpdateEntityAsync(originalProduct);
-                            TempData["Success"] = "Product updated successfully!";
-                            return RedirectToAction(nameof(Index));
-                        }
-                        catch (Exception ex)
-                        {
-                            _logger.LogError(ex, "Error updating product: {Message}", ex.Message);
-                            ModelState.AddModelError("", $"Error updating product: {ex.Message}");
-                        }
-                    }
-                    return View(product);
+                    TempData["Success"] = "Product updated successfully!";
+                    return RedirectToAction(nameof(Index));
                 }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Error updating product: {Message}", ex.Message);
+                    ModelState.AddModelError("", $"Error updating product: {ex.Message}");
+                }
+            }
+            return View(product);
+        }
 
-                [HttpPost]
+
+        [HttpPost]
 
                 public async Task<IActionResult> Delete(string id)
                 {

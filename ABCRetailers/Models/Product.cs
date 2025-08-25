@@ -26,12 +26,15 @@ namespace ABCRetailers.Models
         [Display(Name = "Description")]
 
         public string Description { get; set; } = string.Empty;
+
         [Required(ErrorMessage = "Price is required")]
         [Display(Name = "Price")]
 
-        public string PriceString { get; set; } = string.Empty;
-        [Display(Name = "Price")]
 
+        //public string PriceString { get; set; } = string.Empty;
+        public double Price { get; set; }
+      
+        /*
         public decimal Price
         {
             get
@@ -43,7 +46,7 @@ namespace ABCRetailers.Models
                 PriceString = value.ToString("F2");
             }
         }
-
+        */
 
         [Required]
         [Display(Name = "Stock Available")]
