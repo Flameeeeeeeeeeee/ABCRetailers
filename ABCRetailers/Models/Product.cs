@@ -31,22 +31,9 @@ namespace ABCRetailers.Models
         [Display(Name = "Price")]
 
 
-        //public string PriceString { get; set; } = string.Empty;
+       
         public double Price { get; set; }
       
-        /*
-        public decimal Price
-        {
-            get
-            {
-                return decimal.TryParse(PriceString, out var result) ? result : 0m;
-            }
-            set
-            {
-                PriceString = value.ToString("F2");
-            }
-        }
-        */
 
         [Required]
         [Display(Name = "Stock Available")]

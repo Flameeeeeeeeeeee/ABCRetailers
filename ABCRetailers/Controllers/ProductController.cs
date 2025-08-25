@@ -50,8 +50,7 @@ namespace ABCRetailers.Controllers
                 }
             }
             _logger.LogInformation("Final product price: {Price}", product.Price);
-            // attempt to fix price issue
-            //product.PriceString = product.Price.ToString("0.00", CultureInfo.InvariantCulture);
+            
             if (ModelState.IsValid)
             {
                 try
