@@ -247,7 +247,7 @@ namespace ABCRetailers.Controllers
                 {
                     OrderId = order.OrderId,
                     CustomerId = order.CustomerId,
-                    CustomerName = order.Username,
+                    CustomerName = order.Username ,
                     ProductName = order.ProductName,
                     PreviousStatus = previousStatus,
                     NewStatus = newStatus,

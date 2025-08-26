@@ -287,57 +287,32 @@ else
 
 
 
-        function updateOrderStatus(orderRowKey, newStatus) {
-
+                function updateOrderStatus(orderRowKey, newStatus) {
             if (confirm(`Are you sure you want to change the status to "${newStatus}"?`)) {
-
+                // Send as URL-encoded form data instead of JSON
                 fetch('/Order/UpdateOrderStatus', {
-
                     method: 'POST',
-
                     headers: {
-
-                        'Content-Type': 'application/json'
-
+                        'Content-Type': 'application/x-www-form-urlencoded',
+                        'RequestVerificationToken': document.querySelector('input[name="__RequestVerificationToken"]').value
                     },
-
-                    body: JSON.stringify({
-
-                        id: orderRowKey,
-
-                        newStatus: newStatus
-
-                    })
-
+                    body: `id=${encodeURIComponent(orderRowKey)}&newStatus=${encodeURIComponent(newStatus)}`
                 })
-
                 .then(response => response.json())
-
                 .then(data => {
-
                     if (data.success) {
-
                         alert('Status updated successfully!');
-
                         location.reload();
-
                     } else {
-
                         alert('Error: ' + data.message);
-
                     }
-
                 })
-
                 .catch(error => {
-
                     alert('An error occurred while updating the status');
-
                 });
-
             }
-
         }
+
 
     </script>
 
