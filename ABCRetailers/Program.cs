@@ -1,7 +1,8 @@
 using ABCRetailers.Services;
 using System.Globalization;
+using Microsoft.AspNetCore.Http.Features;
 
-    namespace ABCRetailers
+namespace ABCRetailers
 {
     public class Program
     {
@@ -12,8 +13,24 @@ using System.Globalization;
             // Add services to the container.
             builder.Services.AddControllersWithViews();
 
-            //Register Azure Storage Services
-            builder.Services.AddScoped<IAzureStorageService, AzureStorageService>();
+            builder.Services.AddHttpClient<IFunctionsApi, FunctionsApiClient>((sp, client) =>
+            {
+                var cfg = sp.GetRequiredService<IConfiguration>();
+                var baseUrl = cfg["Functions:BaseUrl"]
+                    ?? throw new InvalidOperationException("Functions BaseUrl missing");
+                client.BaseAddress = new Uri(baseUrl.TrimEnd('/') + "/api");
+                client.Timeout = TimeSpan.FromSeconds(100);
+            });
+
+
+            //optional: allow larger Multipart Uploads (images, proofs, etc.)
+            builder.Services.Configure<FormOptions>(o =>
+            {
+                o.MultipartBodyLengthLimit = 50 * 1024 * 1024;
+            });
+
+            Console.WriteLine("Functions BaseUrl: " + builder.Configuration["Functions:BaseUrl"]);
+
 
             //Add logging
             builder.Services.AddLogging();
@@ -43,9 +60,9 @@ using System.Globalization;
 
                 name: "default",
                 pattern: "{controller=Home}/{action=Index}/{id?}");
-               
+
 
             app.Run();
         }
     }
-}
+}

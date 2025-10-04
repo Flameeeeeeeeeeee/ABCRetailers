@@ -1,198 +1,167 @@
-﻿using System.Globalization;
-using ABCRetailers.Models;
-using ABCRetailers.Services;
-using Azure.Storage.Blobs.Models;
-using Microsoft.AspNetCore.Mvc;
-using static System.Net.Mime.MediaTypeNames;
+﻿//using Microsoft.AspNetCore.Mvc;
+//using ABCRetailers.Services;
 
+//using ABCRetailersFunctions.Models; // Functions API DTO
+//using Azure.Storage.Blobs;
 
-namespace ABCRetailers.Controllers
-{
-    public class ProductController : Controller
-    {
-        private readonly IAzureStorageService _storageService;
-        private readonly ILogger<ProductController> _logger;
-        public ProductController(IAzureStorageService storageService, ILogger<ProductController> logger)
-        {
-            _storageService = storageService;
-            _logger = logger;
+//namespace ABCRetailers.Controllers
+//{
+//    public class ProductController : Controller
+//    {
+//        private readonly IFunctionsApi _functionsApi;
+//        private readonly BlobServiceClient _blobService;
 
-        }
+//        private const string ContainerName = "product-images";
 
-        public async Task<IActionResult> Index()
-        {
-            var products = await _storageService.GetAllEntitiesAsync<Product>();
-            return View(products);
-        }
-        public IActionResult Create()
-        {
-            return View();
-        }
+//        public ProductController(IFunctionsApi functionsApi, BlobServiceClient blobService)
+//        {
+//            _functionsApi = functionsApi;
+//            _blobService = blobService;
+//        }
 
-        [HttpPost]
-        [ValidateAntiForgeryToken]
+//        // GET: Products
+//        public async Task<IActionResult> Index()
+//        {
+//            var apiProducts = await _functionsApi.GetProductsAsync(); // Functions DTO
+//            // Map to MVC DTO for the view
+//            var products = apiProducts.Select(p => new ProductDto
+//            {
+//                ProductId = p.ProductId,
+//                ProductName = p.ProductName,
+//                Description = p.Description,
+//                Price = p.Price,
+//                StockAvailable = p.StockAvailable,
+//                ImageUrl = p.ImageUrl
+//            });
+//            return View(products);
+//        }
 
-        public async Task<IActionResult> Create(Product product, IFormFile? imageFile)
-        {
-            // Manual price parsing to fix binding issue
-            if (Request.Form.TryGetValue("Price", out var priceFormValue)) // potential issue
-            {
-                _logger.LogInformation("Raw price from form: '{PriceFormValue}'", priceFormValue.ToString());
+//        // GET: Products/Create
+//        public IActionResult Create() => View();
 
-                if (double.TryParse(priceFormValue, out var parsedPrice))
-                {
-                    product.Price = parsedPrice;
-                    _logger.LogInformation("Successfully parsed price: {Price}", parsedPrice);
-                }
-                else
-                {
-                    _logger.LogWarning("Failed to parse price: {PriceFormValue}", priceFormValue.ToString());
-                }
-            }
-            _logger.LogInformation("Final product price: {Price}", product.Price);
-            
-            if (ModelState.IsValid)
-            {
-                try
-                {
-                    if (product.Price <= 0)
-                    {
-                        ModelState.AddModelError("Price", "Price must be greater than $0.00");
-                        return View(product);
-                    }
+//        // POST: Products/Create
+//        [HttpPost]
+//        [ValidateAntiForgeryToken]
+//        public async Task<IActionResult> Create(ProductDto product, IFormFile? imageFile)
+//        {
+//            if (!ModelState.IsValid) return View(product);
 
-                    // Upload image if provided
-                    if (imageFile != null && imageFile.Length > 0)
-                    {
-                        var imageUrl = await _storageService.UploadImageAsync(imageFile, "product-images");
-                        product.ImageUrl = imageUrl;
-                    }
+//            try
+//            {
+//                if (imageFile != null && imageFile.Length > 0)
+//                {
+//                    product.ImageUrl = await UploadImageAsync(imageFile);
+//                }
 
-                    await _storageService.AddEntityAsync(product);
+//                // Map MVC DTO -> Functions DTO
+//                var apiDto = new ProductDto
+//                {
+//                    ProductId = product.ProductId,
+//                    ProductName = product.ProductName,
+//                    Description = product.Description,
+//                    Price = product.Price,
+//                    StockAvailable = product.StockAvailable,
+//                    ImageUrl = product.ImageUrl
+//                };
 
-                   
+//                await _functionsApi.CreateProductAsync(apiDto);
+//                TempData["Success"] = "Product created successfully!";
+//                return RedirectToAction(nameof(Index));
+//            }
+//            catch (Exception ex)
+//            {
+//                ModelState.AddModelError("", $"Error creating product: {ex.Message}");
+//                return View(product);
+//            }
+//        }
 
-                    
-                    
+//        // GET: Products/Edit/{id}
+//        public async Task<IActionResult> Edit(string id)
+//        {
+//            if (string.IsNullOrEmpty(id)) return NotFound();
 
-                    TempData["Success"] = $"Product '{product.ProductName}' created successfully with price {product.Price:C}!";
-                    return RedirectToAction(nameof(Index));
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogError(ex, "Error creating product");
-                    ModelState.AddModelError("", $"Error creating product: {ex.Message}");
-                }
-            }
-            return View(product);
-        }
+//            var apiProduct = await _functionsApi.GetProductAsync(id);
+//            if (apiProduct == null) return NotFound();
 
-        public async Task<IActionResult> Edit(string id)
-        {
-            if (string.IsNullOrEmpty(id))
-            {
-                return NotFound();
-            }
+//            // Map Functions DTO -> MVC DTO
+//            var product = new ProductDto
+//            {
+//                ProductId = apiProduct.ProductId,
+//                ProductName = apiProduct.ProductName,
+//                Description = apiProduct.Description,
+//                Price = apiProduct.Price,
+//                StockAvailable = apiProduct.StockAvailable,
+//                ImageUrl = apiProduct.ImageUrl
+//            };
 
-            var product = await _storageService.GetEntityAsync<Product>("Product", id);
-            if (product == null)
-            {
-                return NotFound();
-            }
-            return View(product);
-        }
+//            return View(product);
+//        }
 
-        
+//        // POST: Products/Edit/{id}
+//        [HttpPost]
+//        [ValidateAntiForgeryToken]
+//        public async Task<IActionResult> Edit(string id, ProductDto product, IFormFile? imageFile)
+//        {
+//            if (id != product.ProductId) return BadRequest();
 
-        [HttpPost]
-        [ValidateAntiForgeryToken]
-        public async Task<IActionResult> Edit(Product product, IFormFile? imageFile)
-        {
+//            if (!ModelState.IsValid) return View(product);
 
-            
+//            try
+//            {
+//                if (imageFile != null && imageFile.Length > 0)
+//                {
+//                    product.ImageUrl = await UploadImageAsync(imageFile);
+//                }
 
+//                var apiDto = new ProductDto
+//                {
+//                    ProductId = product.ProductId,
+//                    ProductName = product.ProductName,
+//                    Description = product.Description,
+//                    Price = product.Price,
+//                    StockAvailable = product.StockAvailable,
+//                    ImageUrl = product.ImageUrl
+//                };
 
-            // Manual price parsing for edit 
-            if (Request.Form.TryGetValue("Price", out var priceFormValue))
-            {
-                if (double.TryParse(priceFormValue, out var parsedPrice))
-                {
-                    product.Price = parsedPrice;
-                    _logger.LogInformation("Edit: Successfully parsed price: {Price}", parsedPrice);
-                }
-            }
-            if (ModelState.IsValid)
-            {
-                try
-                {
-                    // Get the original product to preserve ETag
-                    var originalProduct = await _storageService.GetEntityAsync<Product>("Product", product.RowKey);
-                    if (originalProduct == null)
+//                await _functionsApi.UpdateProductAsync(id, apiDto);
+//                TempData["Success"] = "Product updated successfully!";
+//                return RedirectToAction(nameof(Index));
+//            }
+//            catch (Exception ex)
+//            {
+//                ModelState.AddModelError("", $"Error updating product: {ex.Message}");
+//                return View(product);
+//            }
+//        }
 
-                    {
-                        return NotFound();
-                    }
+//        // POST: Products/Delete/{id}
+//        [HttpPost]
+//        public async Task<IActionResult> Delete(string id)
+//        {
+//            try
+//            {
+//                await _functionsApi.DeleteProductAsync(id);
+//                TempData["Success"] = "Product deleted successfully!";
+//            }
+//            catch (Exception ex)
+//            {
+//                TempData["Error"] = $"Error deleting product: {ex.Message}";
+//            }
+//            return RedirectToAction(nameof(Index));
+//        }
 
-                    // Update properties but keep the original ETag original Product. ProductName = product. ProductName;
-                    originalProduct.ProductName = product.ProductName;
-                    originalProduct.Description = product.Description;
-                    originalProduct.Price = product.Price;
-                    originalProduct.StockAvailable = product.StockAvailable;
-                    //attempt to fix issue with price
-                    //originalProduct.PriceString = originalProduct.Price.ToString("0.00", CultureInfo.InvariantCulture);
+//        // ---------------- Helper for Blob Upload ----------------
+//        private async Task<string> UploadImageAsync(IFormFile imageFile)
+//        {
+//            var containerClient = _blobService.GetBlobContainerClient(ContainerName);
+//            await containerClient.CreateIfNotExistsAsync();
+//            var blobName = $"{Guid.NewGuid()}_{imageFile.FileName}";
+//            var blobClient = containerClient.GetBlobClient(blobName);
 
-                    // Upload new image if provided
-                    if (imageFile != null && imageFile.Length > 0)
-                    {
+//            using var stream = imageFile.OpenReadStream();
+//            await blobClient.UploadAsync(stream, overwrite: true);
 
-                        var imageUrl = await _storageService.UploadImageAsync(imageFile, "product-images");
-                        originalProduct.ImageUrl = imageUrl;
-                    }
-                    //_logger.LogInformation("Updating Product: Name={ProductName}, Price={Price}", originalProduct.ProductName, originalProduct.Price);
-
-
-
-                    await _storageService.UpdateEntityAsync(originalProduct);
-                    TempData["Success"] = "Product updated successfully!";
-                    return RedirectToAction(nameof(Index));
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogError(ex, "Error updating product: {Message}", ex.Message);
-                    ModelState.AddModelError("", $"Error updating product: {ex.Message}");
-                }
-            }
-            return View(product);
-        }
-
-
-        [HttpPost]
-
-                public async Task<IActionResult> Delete(string id)
-                {
-                    try
-                    {
-                        await _storageService.DeleteEntityAsync<Product>("Product", id);
-                        TempData["success"] = "product deleted successfully";
-                    }
-                    catch (Exception ex)
-                    {
-                        TempData["Error"] = $"Error deleting product: {ex.Message}";
-                    }
-                    return RedirectToAction(nameof(Index));
-                }
-
-            }
-        }
-    
-
-
-
-
-
-
-
-
-
-
-                    
+//            return blobClient.Uri.ToString();
+//        }
+//    }
+//}

@@ -38,6 +38,10 @@ namespace ABCRetailers.Models
         [Required]
         [Display(Name = "Shipping Address")]
         public string ShippingAddress { get; set; } = string.Empty;
+
+        [Display(Name = "Profile Picture URL")]
+        public string? ProfilePictureUrl { get; set; }
+
     }
 }
 
