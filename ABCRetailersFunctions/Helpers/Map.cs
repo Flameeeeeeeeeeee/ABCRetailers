@@ -54,13 +54,38 @@ namespace ABCRetailersFunctions.Helpers
 
 
 
-        // ---------------- Orders ----------------
+        //// ---------------- Orders ----------------
+        //public static OrderDto ToDto(OrderEntity entity) => new()
+        //{
+        //    OrderId = entity.RowKey,
+        //    CustomerId = entity.CustomerId,
+        //    ProductId = entity.ProductId,
+        //    Quantity = entity.Quantity,
+        //    TotalPrice = entity.TotalPrice,
+        //    Status = entity.Status,
+        //    OrderDate = entity.OrderDate
+        //};
+
+        //public static OrderEntity ToEntity(OrderDto dto, OrderEntity? existing = null)
+        //{
+        //    var entity = existing ?? new OrderEntity();
+        //    entity.CustomerId = dto.CustomerId;
+        //    entity.ProductId = dto.ProductId;
+        //    entity.Quantity = dto.Quantity;
+        //    entity.TotalPrice = dto.TotalPrice;
+        //    entity.Status = dto.Status;
+        //    entity.OrderDate = dto.OrderDate;
+        //    return entity;
+        //}
         public static OrderDto ToDto(OrderEntity entity) => new()
         {
             OrderId = entity.RowKey,
             CustomerId = entity.CustomerId,
+            Username = entity.Username,         // ✅ add this
             ProductId = entity.ProductId,
+            ProductName = entity.ProductName,   // ✅ add this
             Quantity = entity.Quantity,
+            UnitPrice = entity.UnitPrice,       // ✅ add this
             TotalPrice = entity.TotalPrice,
             Status = entity.Status,
             OrderDate = entity.OrderDate
@@ -70,13 +95,17 @@ namespace ABCRetailersFunctions.Helpers
         {
             var entity = existing ?? new OrderEntity();
             entity.CustomerId = dto.CustomerId;
+            entity.Username = dto.Username;          // ✅ add this
             entity.ProductId = dto.ProductId;
+            entity.ProductName = dto.ProductName;    // ✅ add this
             entity.Quantity = dto.Quantity;
+            entity.UnitPrice = dto.UnitPrice;        // ✅ add this
             entity.TotalPrice = dto.TotalPrice;
             entity.Status = dto.Status;
             entity.OrderDate = dto.OrderDate;
             return entity;
         }
+
 
     }
 }

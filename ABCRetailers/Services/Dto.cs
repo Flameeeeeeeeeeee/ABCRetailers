@@ -1,4 +1,6 @@
-﻿namespace ABCRetailers.Services.Dto
+﻿using System.Text.Json.Serialization;
+
+namespace ABCRetailers.Services.Dto
 {
     // ---------------- Customers ----------------
     public class CustomerDto
@@ -26,6 +28,7 @@
     // ---------------- Orders ----------------
     public class OrderDto
     {
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         public string? OrderId { get; set; }
         public string CustomerId { get; set; } = string.Empty;
         public string Username { get; set; } = string.Empty;

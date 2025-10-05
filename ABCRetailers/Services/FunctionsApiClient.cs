@@ -1,7 +1,9 @@
-﻿using System.Text;
-using ABCRetailers.Models;
+﻿using System.Net.Http;
+using System.Text;
 using System.Text.Json;
+using ABCRetailers.Models;
 using ABCRetailersFunctions.Models;
+using static System.Net.WebRequestMethods;
 
 namespace ABCRetailers.Services
 {
@@ -88,14 +90,43 @@ namespace ABCRetailers.Services
         public async Task<OrderDto?> GetOrderAsync(string id)
             => await _http.GetFromJsonAsync<OrderDto>($"api/orders/{id}");
 
-        public async Task<OrderDto> CreateOrderAsync(OrderDto order)
-        {
-            var response = await _http.PostAsJsonAsync("api/orders", order);
-            response.EnsureSuccessStatusCode();
-            return await response.Content.ReadFromJsonAsync<OrderDto>()!;
-        }
 
-        public async Task<bool> DeleteOrderAsync(string id)
+
+public async Task<OrderDto> CreateOrderAsync(OrderDto order)
+    {
+        // 1. Manually serialize the object to a JSON string
+        // This produces the same JSON that PostAsJsonAsync would send.
+        var jsonPayload = JsonSerializer.Serialize(order);
+
+        // 2. LOG the JSON payload to check for case issues or unexpected values
+        System.Diagnostics.Debug.WriteLine($"JSON BEING SENT: {jsonPayload}");
+        // Console.WriteLine(jsonPayload); // Use this if debugging Console/Terminal
+
+        // 3. Create the StringContent object (what PostAsJsonAsync does internally)
+        var content = new StringContent(jsonPayload, Encoding.UTF8, "application/json");
+
+        // 4. Send the request using PostAsync (the manual version)
+        var response = await _http.PostAsync("api/orders", content);
+
+        // 5. Throw an exception if the status code is not 2xx
+        response.EnsureSuccessStatusCode();
+
+        // 6. Read and return the response DTO
+        return await response.Content.ReadFromJsonAsync<OrderDto>()!;
+    }
+    //public async Task<OrderDto> CreateOrderAsync(OrderDto order)
+    //{
+    //    // In your FunctionsApiClient.CreateOrderAsync method, BEFORE the PostAsync call:
+    //    var jsonContent = await content.ReadAsStringAsync();
+    //    System.Diagnostics.Debug.WriteLine("JSON BEING SENT: " + jsonContent);
+    //    // Or use your preferred logger
+    //    var response = await _http.PostAsJsonAsync("api/orders", order);
+    //    response.EnsureSuccessStatusCode();
+    //    return await response.Content.ReadFromJsonAsync<OrderDto>()!;
+    //}
+
+
+    public async Task<bool> DeleteOrderAsync(string id)
         {
             var response = await _http.DeleteAsync($"api/orders/{id}");
             return response.IsSuccessStatusCode;
@@ -107,29 +138,26 @@ namespace ABCRetailers.Services
             response.EnsureSuccessStatusCode();
             return await response.Content.ReadFromJsonAsync<OrderDto>()!;
         }
+        //new
+        public async Task<CustomerDto?> GetCustomerByIdAsync(string customerId)
+        {
+            var response = await _http.GetAsync($"/api/customers/{customerId}");
+            if (response.IsSuccessStatusCode)
+            {
+                return await response.Content.ReadFromJsonAsync<CustomerDto>();
+            }
+            return null;
+        }
 
-        //// ---------------- Mapping Helpers ----------------
-        //private static Customer MapToCustomer(CustomerDto dto) => new Customer
-        //{
-        //    RowKey = dto.CustomerId,
-        //    PartitionKey = "Customer",
-        //    Name = dto.Name,
-        //    Surname = dto.Surname,
-        //    Username = dto.Username,
-        //    Email = dto.Email,
-        //    ShippingAddress = dto.ShippingAddress,
-        //    ProfilePictureUrl = dto.ProfilePictureUrl
-        //};
+        public async Task<ProductDto?> GetProductByIdAsync(string productId)
+        {
+            var response = await _http.GetAsync($"/api/products/{productId}");
+            if (response.IsSuccessStatusCode)
+            {
+                return await response.Content.ReadFromJsonAsync<ProductDto>();
+            }
+            return null;
 
-        //private static CustomerDto MapToCustomerDto(Customer c) => new CustomerDto
-        //{
-        //    CustomerId = c.RowKey,
-        //    Name = c.Name,
-        //    Surname = c.Surname,
-        //    Username = c.Username,
-        //    Email = c.Email,
-        //    ShippingAddress = c.ShippingAddress,
-        //    ProfilePictureUrl = c.ProfilePictureUrl
-        //};
+        }
     }
-}
+}

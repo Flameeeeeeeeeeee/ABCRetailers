@@ -1,11 +1,12 @@
 ﻿using System.Net;
+using System.Text.Json;
+using ABCRetailersFunctions.Entities;
+using ABCRetailersFunctions.Helpers;
+using ABCRetailersFunctions.Models;
 using Azure;
 using Azure.Data.Tables;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Azure.Functions.Worker.Http;
-using ABCRetailersFunctions.Entities;
-using ABCRetailersFunctions.Helpers;
-using ABCRetailersFunctions.Models;
 using Microsoft.Extensions.Logging;
 
 namespace ABCRetailersFunctions.Functions
@@ -65,6 +66,15 @@ namespace ABCRetailersFunctions.Functions
         {
             var dto = await HttpJson.ReadJsonAsync<OrderDto>(req, _logger);
             if (dto == null) return req.CreateResponse(HttpStatusCode.BadRequest);
+            dto.OrderDate = DateTime.SpecifyKind(dto.OrderDate, DateTimeKind.Utc);
+            var body = await new StreamReader(req.Body).ReadToEndAsync();
+            _logger.LogInformation("Raw request: {Body}", body);
+
+            var opts = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+          
+
+            _logger.LogInformation("Deserialized DTO: {@Dto}", dto);
+
 
             var table = GetTableClient();
             var entity = Map.ToEntity(dto);
@@ -92,6 +102,7 @@ namespace ABCRetailersFunctions.Functions
                 return response;
             }
         }
+
 
         [Function("Orders_UpdateStatus")]
         public async Task<HttpResponseData> UpdateStatus([HttpTrigger(AuthorizationLevel.Function, "patch", "post", Route = "orders/{id}/status")] HttpRequestData req, string id)

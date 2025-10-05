@@ -27,6 +27,13 @@ namespace ABCRetailers.Services
         Task<OrderDto> CreateOrderAsync(OrderDto order);
         Task<OrderDto> UpdateOrderStatusAsync(string id, string status);
         Task<bool> DeleteOrderAsync(string id);
+        //new
+        Task<CustomerDto?> GetCustomerByIdAsync(string customerId);
+        Task<ProductDto?> GetProductByIdAsync(string productId);
+
+        //uploads
+        Task<string> UploadProofOfPaymentAsync(IFormFile file, string? orderId, string? customerName);
     }
+
 }
 

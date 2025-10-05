@@ -1,173 +1,268 @@
-﻿//using Microsoft.AspNetCore.Mvc;
-//using ABCRetailers.Models;
-//using ABCRetailers.Models.ViewModels;
-//using ABCRetailers.Services;
-//using ABCRetailersFunctions.Models;
+﻿using Microsoft.AspNetCore.Mvc;
+using ABCRetailers.Models;
+using ABCRetailers.Models.ViewModels;
+using ABCRetailers.Services;
 
-//namespace ABCRetailers.Controllers
-//{
-//    public class OrderController : Controller
-//    {
-//        private readonly IFunctionsApi _functionsApi;
+using ABCRetailersFunctions.Models;
 
-//        public OrderController(IFunctionsApi functionsApi)
-//        {
-//            _functionsApi = functionsApi;
-//        }
 
-//        // GET: Orders
-//        public async Task<IActionResult> Index()
-//        {
-//            var orders = await _functionsApi.GetOrdersAsync();
-//            return View(orders);
-//        }
+namespace ABCRetailers.Controllers
+{
+    public class OrderController : Controller
+    {
+        private readonly IFunctionsApi _functionsApi;
+        private readonly ILogger<OrderController> _logger;
 
-//        // GET: Orders/Create
-//        public async Task<IActionResult> Create()
-//        {
-//            var customers = await _functionsApi.GetCustomersAsync();
-//            var products = await _functionsApi.GetProductsAsync();
+        public OrderController(IFunctionsApi functionsApi)
+        {
+            _functionsApi = functionsApi;
+        }
 
-//            var viewModel = new OrderCreateViewModel
-//            {
-//                Customers = customers,
-//                Products = products
-//            };
+        // -------------------- Index --------------------
+        public async Task<IActionResult> Index()
+        {
+            var orderDtos = await _functionsApi.GetOrdersAsync();
 
-//            return View(viewModel);
-//        }
+            // Map DTOs to MVC Models
+            var orders = orderDtos.Select(d => new Order
+            {
+                RowKey = d.OrderId ?? string.Empty,
+                CustomerId = d.CustomerId,
+                Username = d.Username,
+                ProductId = d.ProductId,
+                ProductName = d.ProductName,
+                OrderDate = d.OrderDate,
+                Quantity = d.Quantity,
+                UnitPrice = d.UnitPrice,
+                TotalPrice = d.TotalPrice,
+                Status = d.Status
+            }).ToList();
 
-//        // POST: Orders/Create
-//        [HttpPost]
-//        [ValidateAntiForgeryToken]
-//        public async Task<IActionResult> Create(OrderCreateViewModel model)
-//        {
-//            if (!ModelState.IsValid)
-//            {
-//                await PopulateDropdowns(model);
-//                return View(model);
-//            }
+            return View(orders);
+        }
 
-//            try
-//            {
-//                var orderDto = new OrderDto
-//                {
-//                    CustomerId = model.CustomerId,
-//                    ProductId = model.ProductId,
-//                    OrderDate = model.OrderDate,
-//                    Quantity = model.Quantity
-//                };
+        // -------------------- Create --------------------
+        public async Task<IActionResult> Create()
+        {
+            var viewModel = new OrderCreateViewModel();
+            await PopulateDropdowns(viewModel);
+            return View(viewModel);
+        }
 
-//                await _functionsApi.CreateOrderAsync(orderDto);
+        
+        [HttpPost]
+        [ValidateAntiForgeryToken]
+        public async Task<IActionResult> Create(OrderCreateViewModel model)
+        {
+            if (!ModelState.IsValid)
+            {
+                await PopulateDropdowns(model);
+                return View(model);
+            }
 
-//                TempData["Success"] = "Order created successfully!";
-//                return RedirectToAction(nameof(Index));
-//            }
-//            catch (Exception ex)
-//            {
-//                ModelState.AddModelError("", $"Error creating order: {ex.Message}");
-//                await PopulateDropdowns(model);
-//                return View(model);
-//            }
-//        }
+            try
+            {
+                // 🚨 FIX HERE: Populate the lists NOW so the FirstOrDefault search works.
+                await PopulateDropdowns(model);
 
-//        // GET: Orders/Details/{id}
-//        public async Task<IActionResult> Details(string id)
-//        {
-//            if (string.IsNullOrEmpty(id)) return NotFound();
+                // Validate IDs (your original check, unchanged)
+                if (string.IsNullOrWhiteSpace(model.CustomerId) || string.IsNullOrWhiteSpace(model.ProductId))
+                {
+                    ModelState.AddModelError("", "Please select both a customer and a product.");
+                    // We already called PopulateDropdowns above, so we can return the view.
+                    return View(model);
+                }
 
-//            var order = await _functionsApi.GetOrderAsync(id);
-//            if (order == null) return NotFound();
+                // Now, this search will work because the lists are populated.
+                var customer = model.Customers.FirstOrDefault(c => c.RowKey == model.CustomerId);
+                var product = model.Products.FirstOrDefault(p => p.RowKey == model.ProductId);
 
-//            return View(order);
-//        }
+                // If the selected ID is somehow invalid (not found in the DB), this check is still important.
+                if (customer == null || product == null)
+                {
+                    ModelState.AddModelError("", "Invalid customer or product selection.");
+                    // Lists are already populated, just return view.
+                    return View(model);
+                }
 
-//        // GET: Orders/Edit/{id}
-//        public async Task<IActionResult> Edit(string id)
-//        {
-//            if (string.IsNullOrEmpty(id)) return NotFound();
+                // Log selected IDs for debugging
+                Console.WriteLine($"CustomerId: {model.CustomerId}, ProductId: {model.ProductId}");
 
-//            var order = await _functionsApi.GetOrderAsync(id);
-//            if (order == null) return NotFound();
+                // Build DTO
+                var orderDto = new OrderDto
+                {
+                    CustomerId = customer.RowKey,
+                    Username = customer.Username,
+                    ProductId = product.RowKey,
+                    ProductName = product.ProductName,
+                    Quantity = model.Quantity,
+                    UnitPrice = (double)product.Price,
+                    TotalPrice = (double)(product.Price * model.Quantity),
+                    OrderDate = DateTime.SpecifyKind(model.OrderDate, DateTimeKind.Utc),
+                    Status = string.IsNullOrWhiteSpace(model.Status) ? "Submitted" : model.Status
+                };
 
-//            return View(order);
-//        }
+                // Serialize JSON for logging
+                var options = new System.Text.Json.JsonSerializerOptions
+                {
+                    WriteIndented = true,
+                    DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull
+                };
 
-//        // POST: Orders/Edit/{id}
-//        [HttpPost]
-//        [ValidateAntiForgeryToken]
-//        public async Task<IActionResult> Edit(string id, Order order)
-//        {
-//            if (id != order.OrderId) return BadRequest();
-//            if (!ModelState.IsValid) return View(order);
+                var json = System.Text.Json.JsonSerializer.Serialize(orderDto, options);
+                Console.WriteLine("===== JSON SENT TO AZURE FUNCTION =====");
+                Console.WriteLine(json);
+                Console.WriteLine("=====================================");
 
-//            try
-//            {
-//                // Only update Status and Quantity
-//                var updateDto = new OrderDto
-//                {
-//                    Quantity = order.Quantity,
-//                    Status = order.Status
-//                };
+                // Send DTO to Azure Function
+                await _functionsApi.CreateOrderAsync(orderDto);
 
-//                await _functionsApi.UpdateOrderStatusAsync(id, updateDto.Status);
+                TempData["Success"] = "Order created successfully!";
+                return RedirectToAction(nameof(Index));
+            }
+            catch (Exception ex)
+            {
+                ModelState.AddModelError("", $"Error creating order: {ex.Message}");
+                await PopulateDropdowns(model);
+                return View(model);
+            }
+        }
 
-//                TempData["Success"] = "Order updated successfully!";
-//                return RedirectToAction(nameof(Index));
-//            }
-//            catch (Exception ex)
-//            {
-//                ModelState.AddModelError("", $"Error updating order: {ex.Message}");
-//                return View(order);
-//            }
-//        }
 
-//        // POST: Orders/Delete/{id}
-//        [HttpPost]
-//        public async Task<IActionResult> Delete(string id)
-//        {
-//            try
-//            {
-//                await _functionsApi.DeleteOrderAsync(id);
-//                TempData["Success"] = "Order deleted successfully!";
-//            }
-//            catch (Exception ex)
-//            {
-//                TempData["Error"] = $"Error deleting order: {ex.Message}";
-//            }
-//            return RedirectToAction(nameof(Index));
-//        }
 
-//        // AJAX: Get product price & stock
-//        [HttpGet]
-//        public async Task<JsonResult> GetProductPrice(string productId)
-//        {
-//            try
-//            {
-//                var product = await _functionsApi.GetProductAsync(productId);
-//                if (product != null)
-//                {
-//                    return Json(new
-//                    {
-//                        success = true,
-//                        price = product.Price,
-//                        stock = product.StockAvailable,
-//                        productName = product.ProductName
-//                    });
-//                }
-//                return Json(new { success = false });
-//            }
-//            catch
-//            {
-//                return Json(new { success = false });
-//            }
-//        }
 
-//        // Helper: Populate dropdowns
-//        private async Task PopulateDropdowns(OrderCreateViewModel model)
-//        {
-//            model.Customers = await _functionsApi.GetCustomersAsync();
-//            model.Products = await _functionsApi.GetProductsAsync();
-//        }
-//    }
-//}
+        // -------------------- Edit --------------------
+        public async Task<IActionResult> Edit(string id)
+        {
+            if (string.IsNullOrEmpty(id)) return NotFound();
+
+            var dto = await _functionsApi.GetOrderAsync(id);
+            if (dto == null) return NotFound();
+
+            // Map DTO to ViewModel for editing
+            var viewModel = new OrderCreateViewModel
+            {
+                CustomerId = dto.CustomerId,
+                ProductId = dto.ProductId,
+                Quantity = dto.Quantity,
+                OrderDate = dto.OrderDate,
+                Status = dto.Status
+            };
+            await PopulateDropdowns(viewModel);
+            return View(viewModel);
+        }
+
+        [HttpPost]
+        [ValidateAntiForgeryToken]
+        public async Task<IActionResult> Edit(string id, OrderCreateViewModel model)
+        {
+            if (!ModelState.IsValid)
+            {
+                await PopulateDropdowns(model);
+                return View(model);
+            }
+
+            try
+            {
+                // Build DTO to update order
+                var orderDto = new OrderDto
+                {
+                    OrderId = id,
+                    Status = model.Status,
+                    Quantity = model.Quantity
+                };
+
+                await _functionsApi.UpdateOrderStatusAsync(id, model.Status);
+
+                TempData["Success"] = "Order updated successfully!";
+                return RedirectToAction(nameof(Index));
+            }
+            catch (Exception ex)
+            {
+                ModelState.AddModelError("", $"Error updating order: {ex.Message}");
+                await PopulateDropdowns(model);
+                return View(model);
+            }
+        }
+
+        // -------------------- Delete --------------------
+        [HttpPost]
+        public async Task<IActionResult> Delete(string id)
+        {
+            try
+            {
+                await _functionsApi.DeleteOrderAsync(id);
+                TempData["Success"] = "Order deleted successfully!";
+            }
+            catch (Exception ex)
+            {
+                TempData["Error"] = $"Error deleting order: {ex.Message}";
+            }
+            return RedirectToAction(nameof(Index));
+        }
+
+        // -------------------- AJAX: Product Price --------------------
+        [HttpGet]
+        public async Task<JsonResult> GetProductPrice(string productId)
+        {
+            try
+            {
+                var productDto = await _functionsApi.GetProductAsync(productId);
+                if (productDto != null)
+                {
+                    return Json(new
+                    {
+                        success = true,
+                        price = productDto.Price,
+                        stock = productDto.StockAvailable,
+                        productName = productDto.ProductName
+                    });
+                }
+                return Json(new { success = false });
+            }
+            catch
+            {
+                return Json(new { success = false });
+            }
+        }
+
+        // -------------------- AJAX: Update Order Status --------------------
+        [HttpPost]
+        public async Task<IActionResult> UpdateOrderStatus(string id, string newStatus)
+        {
+            try
+            {
+                await _functionsApi.UpdateOrderStatusAsync(id, newStatus);
+                return Json(new { success = true, message = $"Order status updated to {newStatus}" });
+            }
+            catch (Exception ex)
+            {
+                return Json(new { success = false, message = ex.Message });
+            }
+        }
+
+        // -------------------- Helpers --------------------
+        private async Task PopulateDropdowns(OrderCreateViewModel model)
+        {
+            var customerDtos = await _functionsApi.GetCustomersAsync();
+            var productDtos = await _functionsApi.GetProductsAsync();
+
+            model.Customers = customerDtos.Select(d => new Customer
+            {
+                CustomerId = d.CustomerId,
+                Name = d.Name,
+                Surname = d.Surname,
+                Username = d.Username
+            }).ToList();
+
+            model.Products = productDtos.Select(d => new Product
+            {
+                ProductId = d.ProductId ?? string.Empty,
+                ProductName = d.ProductName,
+                Price = d.Price,
+                StockAvailable = d.StockAvailable,
+                ImageUrl = d.ImageUrl
+            }).ToList();
+        }
+    }
+}
