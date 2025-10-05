@@ -1,163 +1,203 @@
-﻿using System.Net.Http;
+﻿using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
 using ABCRetailers.Models;
-using ABCRetailersFunctions.Models;
-using static System.Net.WebRequestMethods;
 
-namespace ABCRetailers.Services
+namespace ABCRetailers.Services;
+
+public class FunctionsApiClient : IFunctionsApi
 {
-    public class FunctionsApiClient : IFunctionsApi
+    private readonly HttpClient _http;
+    private static readonly JsonSerializerOptions _json = new(JsonSerializerDefaults.Web);
+
+    // routes
+    private const string CustomersRoute = "customers";
+    private const string ProductsRoute = "products";
+    private const string OrdersRoute = "orders";
+    private const string UploadsRoute = "uploads/proof-of-payment"; // multipart
+
+    public FunctionsApiClient(HttpClient http)
     {
-        private readonly HttpClient _http;
+        _http = http;
+    }
 
-        public FunctionsApiClient(HttpClient http)
-        {
-            _http = http;
-        }
+    // ---------- Helpers ----------
+    private static HttpContent JsonBody(object obj)
+        => new StringContent(JsonSerializer.Serialize(obj, _json), Encoding.UTF8, "application/json");
 
-        // ---------------- Customers ----------------
-        public async Task<List<CustomerDto>> GetCustomersAsync()
-        {
-            var dtos = await _http.GetFromJsonAsync<List<CustomerDto>>("api/customers");
-            return dtos ?? new List<CustomerDto>();
-        }
-
-        public async Task<CustomerDto?> GetCustomerAsync(string id)
-        {
-            return await _http.GetFromJsonAsync<CustomerDto>($"api/customers/{id}");
-        }
-
-        public async Task CreateCustomerAsync(CustomerDto customer)
-        {
-            var json = JsonSerializer.Serialize(customer);
-            var content = new StringContent(json, Encoding.UTF8, "application/json");
-            var response = await _http.PostAsync("api/customers", content);
-            response.EnsureSuccessStatusCode();
-        }
-
-        public async Task UpdateCustomerAsync(string id, CustomerDto customer)
-        {
-            var json = JsonSerializer.Serialize(customer);
-            var content = new StringContent(json, Encoding.UTF8, "application/json");
-            var response = await _http.PutAsync($"api/customers/{id}", content);
-            response.EnsureSuccessStatusCode();
-        }
-
-        public async Task DeleteCustomerAsync(string id)
-        {
-            var response = await _http.DeleteAsync($"api/customers/{id}");
-            response.EnsureSuccessStatusCode();
-        }
-
-        // ---------------- Products ----------------
-        public async Task<IEnumerable<ProductDto>> GetProductsAsync()
-        {
-            var dtos = await _http.GetFromJsonAsync<List<ProductDto>>("api/products");
-            return dtos ?? Enumerable.Empty<ProductDto>();
-        }
-
-        public async Task<ProductDto?> GetProductAsync(string id)
-            => await _http.GetFromJsonAsync<ProductDto>($"api/products/{id}");
-
-        public async Task<ProductDto> CreateProductAsync(ProductDto product)
-        {
-            var response = await _http.PostAsJsonAsync("api/products", product);
-            response.EnsureSuccessStatusCode();
-            return await response.Content.ReadFromJsonAsync<ProductDto>()!;
-        }
-
-        public async Task<bool> DeleteProductAsync(string id)
-        {
-            var response = await _http.DeleteAsync($"api/products/{id}");
-            return response.IsSuccessStatusCode;
-        }
-
-        public async Task<ProductDto> UpdateProductAsync(string id, ProductDto product)
-        {
-            var response = await _http.PutAsJsonAsync($"api/products/{id}", product);
-            response.EnsureSuccessStatusCode();
-            return await response.Content.ReadFromJsonAsync<ProductDto>()!;
-        }
-
-        // ---------------- Orders ----------------
-        public async Task<IEnumerable<OrderDto>> GetOrdersAsync()
-        {
-            var dtos = await _http.GetFromJsonAsync<List<OrderDto>>("api/orders");
-            return dtos ?? Enumerable.Empty<OrderDto>();
-        }
-
-        public async Task<OrderDto?> GetOrderAsync(string id)
-            => await _http.GetFromJsonAsync<OrderDto>($"api/orders/{id}");
-
-
-
-public async Task<OrderDto> CreateOrderAsync(OrderDto order)
+    private static async Task<T> ReadJsonAsync<T>(HttpResponseMessage resp)
     {
-        // 1. Manually serialize the object to a JSON string
-        // This produces the same JSON that PostAsJsonAsync would send.
-        var jsonPayload = JsonSerializer.Serialize(order);
-
-        // 2. LOG the JSON payload to check for case issues or unexpected values
-        System.Diagnostics.Debug.WriteLine($"JSON BEING SENT: {jsonPayload}");
-        // Console.WriteLine(jsonPayload); // Use this if debugging Console/Terminal
-
-        // 3. Create the StringContent object (what PostAsJsonAsync does internally)
-        var content = new StringContent(jsonPayload, Encoding.UTF8, "application/json");
-
-        // 4. Send the request using PostAsync (the manual version)
-        var response = await _http.PostAsync("api/orders", content);
-
-        // 5. Throw an exception if the status code is not 2xx
-        response.EnsureSuccessStatusCode();
-
-        // 6. Read and return the response DTO
-        return await response.Content.ReadFromJsonAsync<OrderDto>()!;
+        resp.EnsureSuccessStatusCode();
+        var stream = await resp.Content.ReadAsStreamAsync();
+        var data = await JsonSerializer.DeserializeAsync<T>(stream, _json);
+        return data!;
     }
-    //public async Task<OrderDto> CreateOrderAsync(OrderDto order)
-    //{
-    //    // In your FunctionsApiClient.CreateOrderAsync method, BEFORE the PostAsync call:
-    //    var jsonContent = await content.ReadAsStringAsync();
-    //    System.Diagnostics.Debug.WriteLine("JSON BEING SENT: " + jsonContent);
-    //    // Or use your preferred logger
-    //    var response = await _http.PostAsJsonAsync("api/orders", order);
-    //    response.EnsureSuccessStatusCode();
-    //    return await response.Content.ReadFromJsonAsync<OrderDto>()!;
-    //}
 
+    // ---------- Customers ----------
+    public async Task<List<Customer>> GetCustomersAsync()
+        => await ReadJsonAsync<List<Customer>>(await _http.GetAsync(CustomersRoute));
 
-    public async Task<bool> DeleteOrderAsync(string id)
-        {
-            var response = await _http.DeleteAsync($"api/orders/{id}");
-            return response.IsSuccessStatusCode;
-        }
-
-        public async Task<OrderDto> UpdateOrderStatusAsync(string id, string status)
-        {
-            var response = await _http.PatchAsJsonAsync($"api/orders/{id}/status", new { Status = status });
-            response.EnsureSuccessStatusCode();
-            return await response.Content.ReadFromJsonAsync<OrderDto>()!;
-        }
-        //new
-        public async Task<CustomerDto?> GetCustomerByIdAsync(string customerId)
-        {
-            var response = await _http.GetAsync($"/api/customers/{customerId}");
-            if (response.IsSuccessStatusCode)
-            {
-                return await response.Content.ReadFromJsonAsync<CustomerDto>();
-            }
-            return null;
-        }
-
-        public async Task<ProductDto?> GetProductByIdAsync(string productId)
-        {
-            var response = await _http.GetAsync($"/api/products/{productId}");
-            if (response.IsSuccessStatusCode)
-            {
-                return await response.Content.ReadFromJsonAsync<ProductDto>();
-            }
-            return null;
-
-        }
+    public async Task<Customer?> GetCustomerAsync(string id)
+    {
+        var resp = await _http.GetAsync($"{CustomersRoute}/{id}");
+        if (resp.StatusCode == System.Net.HttpStatusCode.NotFound) return null;
+        return await ReadJsonAsync<Customer>(resp);
     }
+
+    public async Task<Customer> CreateCustomerAsync(Customer c)
+        => await ReadJsonAsync<Customer>(await _http.PostAsync(CustomersRoute, JsonBody(new
+        {
+            name = c.Name,
+            surname = c.Surname,
+            username = c.Username,
+            email = c.Email,
+            shippingAddress = c.ShippingAddress
+        })));
+
+    public async Task<Customer> UpdateCustomerAsync(string id, Customer c)
+        => await ReadJsonAsync<Customer>(await _http.PutAsync($"{CustomersRoute}/{id}", JsonBody(new
+        {
+            name = c.Name,
+            surname = c.Surname,
+            username = c.Username,
+            email = c.Email,
+            shippingAddress = c.ShippingAddress
+        })));
+
+    public async Task DeleteCustomerAsync(string id)
+        => (await _http.DeleteAsync($"{CustomersRoute}/{id}")).EnsureSuccessStatusCode();
+
+    // ---------- Products ----------
+    public async Task<List<Product>> GetProductsAsync()
+        => await ReadJsonAsync<List<Product>>(await _http.GetAsync(ProductsRoute));
+
+    public async Task<Product?> GetProductAsync(string id)
+    {
+        var resp = await _http.GetAsync($"{ProductsRoute}/{id}");
+        if (resp.StatusCode == System.Net.HttpStatusCode.NotFound) return null;
+        return await ReadJsonAsync<Product>(resp);
+    }
+
+    public async Task<Product> CreateProductAsync(Product p, IFormFile? imageFile)
+    {
+        using var form = new MultipartFormDataContent();
+        form.Add(new StringContent(p.ProductName), "ProductName");
+        form.Add(new StringContent(p.Description ?? string.Empty), "Description");
+        form.Add(new StringContent(p.Price.ToString(System.Globalization.CultureInfo.InvariantCulture)), "Price");
+        form.Add(new StringContent(p.StockAvailable.ToString(System.Globalization.CultureInfo.InvariantCulture)), "StockAvailable");
+        if (!string.IsNullOrWhiteSpace(p.ImageUrl)) form.Add(new StringContent(p.ImageUrl), "ImageUrl");
+        if (imageFile is not null && imageFile.Length > 0)
+        {
+            var file = new StreamContent(imageFile.OpenReadStream());
+            file.Headers.ContentType = new MediaTypeHeaderValue(imageFile.ContentType ?? "application/octet-stream");
+            form.Add(file, "ImageFile", imageFile.FileName);
+        }
+        return await ReadJsonAsync<Product>(await _http.PostAsync(ProductsRoute, form));
+    }
+
+    public async Task<Product> UpdateProductAsync(string id, Product p, IFormFile? imageFile)
+    {
+        using var form = new MultipartFormDataContent();
+        form.Add(new StringContent(p.ProductName), "ProductName");
+        form.Add(new StringContent(p.Description ?? string.Empty), "Description");
+        form.Add(new StringContent(p.Price.ToString(System.Globalization.CultureInfo.InvariantCulture)), "Price");
+        form.Add(new StringContent(p.StockAvailable.ToString(System.Globalization.CultureInfo.InvariantCulture)), "StockAvailable");
+        if (!string.IsNullOrWhiteSpace(p.ImageUrl)) form.Add(new StringContent(p.ImageUrl), "ImageUrl");
+        if (imageFile is not null && imageFile.Length > 0)
+        {
+            var file = new StreamContent(imageFile.OpenReadStream());
+            file.Headers.ContentType = new MediaTypeHeaderValue(imageFile.ContentType ?? "application/octet-stream");
+            form.Add(file, "ImageFile", imageFile.FileName);
+        }
+        return await ReadJsonAsync<Product>(await _http.PutAsync($"{ProductsRoute}/{id}", form));
+    }
+
+    public async Task DeleteProductAsync(string id)
+        => (await _http.DeleteAsync($"{ProductsRoute}/{id}")).EnsureSuccessStatusCode();
+
+    // ---------- Orders (use DTOs → map to enum) ----------
+    public async Task<List<Order>> GetOrdersAsync()
+    {
+        var dtos = await ReadJsonAsync<List<OrderDto>>(await _http.GetAsync(OrdersRoute));
+        return dtos.Select(ToOrder).ToList();
+    }
+
+    public async Task<Order?> GetOrderAsync(string id)
+    {
+        var resp = await _http.GetAsync($"{OrdersRoute}/{id}");
+        if (resp.StatusCode == System.Net.HttpStatusCode.NotFound) return null;
+        var dto = await ReadJsonAsync<OrderDto>(resp);
+        return ToOrder(dto);
+    }
+
+    public async Task<Order> CreateOrderAsync(string customerId, string productId, int quantity)
+    {
+        // With JsonSerializerDefaults.Web, keys serialize as: customerId, productId, quantity
+        var payload = new { customerId, productId, quantity };
+        var dto = await ReadJsonAsync<OrderDto>(await _http.PostAsync(OrdersRoute, JsonBody(payload)));
+        return ToOrder(dto);
+    }
+
+    public async Task UpdateOrderStatusAsync(string id, string newStatus)
+    {
+        var payload = new { status = newStatus };
+        (await _http.PatchAsync($"{OrdersRoute}/{id}/status", JsonBody(payload))).EnsureSuccessStatusCode();
+    }
+
+    public async Task DeleteOrderAsync(string id)
+        => (await _http.DeleteAsync($"{OrdersRoute}/{id}")).EnsureSuccessStatusCode();
+
+    // ---------- Uploads ----------
+    public async Task<string> UploadProofOfPaymentAsync(IFormFile file, string? orderId, string? customerName)
+    {
+        using var form = new MultipartFormDataContent();
+        var sc = new StreamContent(file.OpenReadStream());
+        sc.Headers.ContentType = new MediaTypeHeaderValue(file.ContentType ?? "application/octet-stream");
+        form.Add(sc, "ProofOfPayment", file.FileName);
+        if (!string.IsNullOrWhiteSpace(orderId)) form.Add(new StringContent(orderId), "OrderId");
+        if (!string.IsNullOrWhiteSpace(customerName)) form.Add(new StringContent(customerName), "CustomerName");
+
+        var resp = await _http.PostAsync(UploadsRoute, form);
+        resp.EnsureSuccessStatusCode();
+
+        var doc = await ReadJsonAsync<Dictionary<string, string>>(resp);
+        return doc.TryGetValue("fileName", out var name) ? name : file.FileName;
+    }
+
+    // ---------- Mapping ----------
+    private static Order ToOrder(OrderDto d)
+    {
+        var status = Enum.TryParse<OrderStatus>(d.Status, ignoreCase: true, out var s)
+            ? s : OrderStatus.Submitted;
+
+        return new Order
+        {
+            Id = d.Id,
+            CustomerId = d.CustomerId,
+            ProductId = d.ProductId,
+            ProductName = d.ProductName,
+            Quantity = d.Quantity,
+            UnitPrice = d.UnitPrice,
+            OrderDateUtc = d.OrderDateUtc,
+            Status = status
+        };
+    }
+
+    // DTOs that match Functions JSON (camelCase)
+    private sealed record OrderDto(
+        string Id,
+        string CustomerId,
+        string ProductId,
+        string ProductName,
+        int Quantity,
+        decimal UnitPrice,
+        DateTimeOffset OrderDateUtc,
+        string Status);
+}
+
+// Minimal PATCH extension for HttpClient
+internal static class HttpClientPatchExtensions
+{
+    public static Task<HttpResponseMessage> PatchAsync(this HttpClient client, string requestUri, HttpContent content)
+        => client.SendAsync(new HttpRequestMessage(HttpMethod.Patch, requestUri) { Content = content });
 }

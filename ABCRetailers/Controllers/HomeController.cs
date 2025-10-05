@@ -1,79 +1,62 @@
-using System.Diagnostics;
 using ABCRetailers.Models;
 using ABCRetailers.Models.ViewModels;
-using ABCRetailers.Services;
+using ABCRetailers.Services;           // IFunctionsApi
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Logging;
+using System.Diagnostics;
 
 namespace ABCRetailers.Controllers
 {
     public class HomeController : Controller
     {
-        private readonly IFunctionsApi _functionsApi;
+        private readonly IFunctionsApi _api;
+        private readonly ILogger<HomeController> _logger;
 
-        public HomeController(IFunctionsApi functionsApi)
+        public HomeController(IFunctionsApi api, ILogger<HomeController> logger)
         {
-            _functionsApi = functionsApi;
+            _api = api;
+            _logger = logger;
         }
 
         public async Task<IActionResult> Index()
         {
-            // Fetch data using the Functions API
-            var products = await _functionsApi.GetProductsAsync();
-            var customers = await _functionsApi.GetCustomersAsync();
-            var orders = await _functionsApi.GetOrdersAsync();
-
-            // Prepare view model
-            var viewModel = new HomeViewModel
-            {
-                FeaturedProducts = products.Take(5)
-                                           .Select(dto => new Product
-                                           {
-                                               ProductName = dto.ProductName,
-                                               Description = dto.Description,
-                                               Price = dto.Price,
-                                               StockAvailable = dto.StockAvailable,
-                                               ImageUrl = dto.ImageUrl ?? string.Empty
-                                           })
-                                           .ToList(),
-                ProductCount = products.Count(),
-                CustomerCount = customers.Count,
-                OrderCount = orders.Count()
-            };
-
-            return View(viewModel);
-        }
-
-        public IActionResult Privacy() => View();
-
-        public IActionResult ContactUs() => View();
-
-        [HttpPost]
-        public async Task<IActionResult> InitializeStorage()
-        {
             try
             {
-                // Trigger some API calls to ensure connection works
-                await _functionsApi.GetCustomersAsync();
-                await _functionsApi.GetProductsAsync();
-                await _functionsApi.GetOrdersAsync();
+                // Start all three API calls (products, customers, and orders) at once
+                var productsTask = _api.GetProductsAsync();
+                var customersTask = _api.GetCustomersAsync();
+                var ordersTask = _api.GetOrdersAsync();
 
-                TempData["Success"] = "API storage initialized successfully";
+                await Task.WhenAll(productsTask, customersTask, ordersTask);
+
+                var products = productsTask.Result ?? new List<Product>();
+                var customers = customersTask.Result ?? new List<Customer>();
+                var orders = ordersTask.Result ?? new List<Order>();
+
+                var vm = new HomeViewModel
+                {
+                    FeaturedProducts = products.Take(8).ToList(),
+                    ProductCount = products.Count,
+                    CustomerCount = customers.Count,
+                    OrderCount = orders.Count
+                };
+
+                return View(vm);
             }
             catch (Exception ex)
             {
-                TempData["Error"] = $"Failed to initialize API storage: {ex.Message}";
-            }
+                _logger.LogError(ex, "Failed to load dashboard data from Functions API.");
+                TempData["Error"] = "Could not load dashboard data. Please try again.";
 
-            return RedirectToAction(nameof(Index));
+                // renders view
+                return View(new HomeViewModel());
+            }
         }
+        public IActionResult ContactUs() => View();
+        public IActionResult Privacy() => View();
 
         [ResponseCache(Duration = 0, Location = ResponseCacheLocation.None, NoStore = true)]
         public IActionResult Error()
-        {
-            return View(new ErrorViewModel
-            {
-                RequestId = Activity.Current?.Id ?? HttpContext.TraceIdentifier
-            });
-        }
+            => View(new ErrorViewModel { RequestId = Activity.Current?.Id ?? HttpContext.TraceIdentifier });
     }
 }

@@ -1,70 +1,67 @@
-using System.Globalization;
 using ABCRetailers.Services;
 using Azure.Storage.Blobs;
 using Microsoft.AspNetCore.Http.Features;
+using System.Globalization;
 
-namespace ABCRetailers
+var builder = WebApplication.CreateBuilder(args);
+
+// Add services to the container
+builder.Services.AddControllersWithViews();
+
+// --- Register the named HttpClient that FunctionsApiClient expects ---
+builder.Services.AddHttpClient("Functions", client =>
 {
-    public class Program
-    {
-        public static void Main(string[] args)
-        {
-            var builder = WebApplication.CreateBuilder(args);
+    var baseUrl = builder.Configuration["Functions:BaseUrl"]
+        ?? throw new InvalidOperationException("Functions BaseUrl missing");
+    client.BaseAddress = new Uri(baseUrl.TrimEnd('/') + "/api");
+    client.Timeout = TimeSpan.FromSeconds(100);
+});
 
-            // Add services to the container.
-            builder.Services.AddControllersWithViews();
-
-            builder.Services.AddHttpClient<IFunctionsApi, FunctionsApiClient>((sp, client) =>
-            {
-                var cfg = sp.GetRequiredService<IConfiguration>();
-                var baseUrl = cfg["Functions:BaseUrl"]
-                    ?? throw new InvalidOperationException("Functions BaseUrl missing");
-                client.BaseAddress = new Uri(baseUrl.TrimEnd('/') + "/api");
-                client.Timeout = TimeSpan.FromSeconds(100);
-            });
+// --- Register FunctionsApiClient manually, using IHttpClientFactory ---
+builder.Services.AddHttpClient<IFunctionsApi, FunctionsApiClient>(client =>
+{
+    var baseUrl = builder.Configuration["Functions:BaseUrl"]
+        ?? throw new InvalidOperationException("Functions BaseUrl missing");
+    client.BaseAddress = new Uri(baseUrl.TrimEnd('/') + "/api/");
+    client.Timeout = TimeSpan.FromSeconds(100);
+});
 
 
-            //optional: allow larger Multipart Uploads (images, proofs, etc.)
-            builder.Services.Configure<FormOptions>(o =>
-            {
-                o.MultipartBodyLengthLimit = 50 * 1024 * 1024;
-            });
+// Optional: allow larger Multipart Uploads (images, proofs, etc.)
+builder.Services.Configure<FormOptions>(o =>
+{
+    o.MultipartBodyLengthLimit = 50 * 1024 * 1024;
+});
 
-            Console.WriteLine("Functions BaseUrl: " + builder.Configuration["Functions:BaseUrl"]);
+// Logging
+builder.Services.AddLogging();
 
+// Blob Storage client
+builder.Services.AddSingleton(new BlobServiceClient(
+    builder.Configuration.GetConnectionString("AzureStorage")
+));
 
-            //Add logging
-            builder.Services.AddLogging();
-            // inside builder.Services section:
-            builder.Services.AddSingleton(new BlobServiceClient(builder.Configuration.GetConnectionString("AzureStorage")));
-            var app = builder.Build();
+var app = builder.Build();
 
-            //Set the culture for decimal handling (Fixes price issue)
-            var culture = new CultureInfo("en-US");
-            CultureInfo.DefaultThreadCurrentCulture = culture;
-            CultureInfo.DefaultThreadCurrentUICulture = culture;
+// Set culture for decimal handling
+var culture = new CultureInfo("en-US");
+CultureInfo.DefaultThreadCurrentCulture = culture;
+CultureInfo.DefaultThreadCurrentUICulture = culture;
 
-            // Configure the HTTP request pipeline.
-            if (!app.Environment.IsDevelopment())
-            {
-                app.UseExceptionHandler("/Home/Error");
-                // The default HSTS value is 30 days. You may want to change this for production scenarios, see https://aka.ms/aspnetcore-hsts.
-                app.UseHsts();
-            }
+// Configure HTTP request pipeline
+if (!app.Environment.IsDevelopment())
+{
+    app.UseExceptionHandler("/Home/Error");
+    app.UseHsts();
+}
 
-            app.UseHttpsRedirection();
-            app.UseStaticFiles();
-            app.UseRouting();
-            app.UseAuthorization();
-            app.MapControllerRoute(
+app.UseHttpsRedirection();
+app.UseStaticFiles();
+app.UseRouting();
+app.UseAuthorization();
 
+app.MapControllerRoute(
+    name: "default",
+    pattern: "{controller=Home}/{action=Index}/{id?}");
 
-
-                name: "default",
-                pattern: "{controller=Home}/{action=Index}/{id?}");
-
-
-            app.Run();
-        }
-    }
-}
+app.Run();

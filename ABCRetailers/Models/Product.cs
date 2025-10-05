@@ -1,80 +1,30 @@
-﻿using Azure;
-using Azure.Data.Tables;
-using System.ComponentModel.DataAnnotations;
-
+﻿using System.ComponentModel.DataAnnotations;
 
 namespace ABCRetailers.Models
 {
-
-    //    public class Product : ITableEntity
-    //    {
-    //        public string PartitionKey { get; set; } = "Product";
-
-    //        public string RowKey { get; set; } = Guid.NewGuid().ToString();
-
-    //        public DateTimeOffset? Timestamp { get; set; }
-
-    //        public ETag ETag { get; set; }
-    //        [Display(Name = "Product ID")]
-
-    //        public string ProductId => RowKey;
-    //        [Required]
-    //        [Display(Name = "Product Name")]
-
-    //        public string ProductName { get; set; } = string.Empty;
-    //        [Required]
-    //        [Display(Name = "Description")]
-
-    //        public string Description { get; set; } = string.Empty;
-
-    //        [Required(ErrorMessage = "Price is required")]
-    //        [Display(Name = "Price")]
-
-
-
-    //        public double Price { get; set; }
-
-
-    //        [Required]
-    //        [Display(Name = "Stock Available")]
-
-    //        public int StockAvailable { get; set; }
-    //        [Display(Name = "Image URL")]
-
-    //        public string ImageUrl { get; set; } = string.Empty;
-    //    }
-    //}
-    public class Product : ITableEntity
+    public class Product
     {
-        public string PartitionKey { get; set; } = "Product";
-
-        public string RowKey { get; set; } = Guid.NewGuid().ToString();
-
-        public DateTimeOffset? Timestamp { get; set; }
-
-        public ETag ETag { get; set; }
-
         [Display(Name = "Product ID")]
-        public string ProductId
-        {
-            get => RowKey;
-            set => RowKey = value;
-        }
+        public string Id { get; set; } = string.Empty; // set from Function response
 
-        [Required]
+        [Required(ErrorMessage = "Product name is required")]
         [Display(Name = "Product Name")]
         public string ProductName { get; set; } = string.Empty;
 
-        [Required]
+        [Required(ErrorMessage = "Description is required")]
         [Display(Name = "Description")]
         public string Description { get; set; } = string.Empty;
 
-        [Required(ErrorMessage = "Price is required")]
-        [Display(Name = "Price")]
-        public double Price { get; set; }
 
-        [Required]
-        [Display(Name = "Stock Available")]
+
+        //band aid fix for price
+        [Required, Display(Name = "Price")]
+        [Range(typeof(decimal), "0.01", "79228162514264337593543950335",
+               ErrorMessage = "Price must be greater than 0")]
+        public decimal Price { get; set; }
+
+
+        [Required, Display(Name = "Stock Available")]
         public int StockAvailable { get; set; }
 
         [Display(Name = "Image URL")]

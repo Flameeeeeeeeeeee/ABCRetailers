@@ -1,39 +1,30 @@
-﻿using System.Security.Cryptography.Xml;
-using ABCRetailers.Models;
-using ABCRetailersFunctions.Models;
+﻿using ABCRetailers.Models;
 
+namespace ABCRetailers.Services;
 
-namespace ABCRetailers.Services
+public interface IFunctionsApi
 {
-    public interface IFunctionsApi
-    {
-        // Customers
-        Task<List<CustomerDto>> GetCustomersAsync();
-        Task<CustomerDto?> GetCustomerAsync(string id);
-        Task CreateCustomerAsync(CustomerDto customer);
-        Task UpdateCustomerAsync(string id, CustomerDto customer);
-        Task DeleteCustomerAsync(string id);
+    // Customers
+    Task<List<Customer>> GetCustomersAsync();
+    Task<Customer?> GetCustomerAsync(string id);
+    Task<Customer> CreateCustomerAsync(Customer c);
+    Task<Customer> UpdateCustomerAsync(string id, Customer c);
+    Task DeleteCustomerAsync(string id);
 
-        // Products
-        Task<IEnumerable<ProductDto>> GetProductsAsync();
-        Task<ProductDto?> GetProductAsync(string id);
-        Task<ProductDto> CreateProductAsync(ProductDto product);
-        Task<ProductDto> UpdateProductAsync(string id, ProductDto product);
-        Task<bool> DeleteProductAsync(string id);
+    // Products
+    Task<List<Product>> GetProductsAsync();
+    Task<Product?> GetProductAsync(string id);
+    Task<Product> CreateProductAsync(Product p, IFormFile? imageFile);
+    Task<Product> UpdateProductAsync(string id, Product p, IFormFile? imageFile);
+    Task DeleteProductAsync(string id);
 
-        // Orders
-        Task<IEnumerable<OrderDto>> GetOrdersAsync();
-        Task<OrderDto?> GetOrderAsync(string id);
-        Task<OrderDto> CreateOrderAsync(OrderDto order);
-        Task<OrderDto> UpdateOrderStatusAsync(string id, string status);
-        Task<bool> DeleteOrderAsync(string id);
-        //new
-        Task<CustomerDto?> GetCustomerByIdAsync(string customerId);
-        Task<ProductDto?> GetProductByIdAsync(string productId);
+    // Orders
+    Task<List<Order>> GetOrdersAsync();
+    Task<Order?> GetOrderAsync(string id);
+    Task<Order> CreateOrderAsync(string customerId, string productId, int quantity);
+    Task UpdateOrderStatusAsync(string id, string newStatus);
+    Task DeleteOrderAsync(string id);
 
-        //uploads
-        Task<string> UploadProofOfPaymentAsync(IFormFile file, string? orderId, string? customerName);
-    }
-
+    // Uploads
+    Task<string> UploadProofOfPaymentAsync(IFormFile file, string? orderId, string? customerName);
 }
-

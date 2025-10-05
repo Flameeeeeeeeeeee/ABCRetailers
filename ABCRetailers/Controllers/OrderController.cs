@@ -3,55 +3,38 @@ using ABCRetailers.Models;
 using ABCRetailers.Models.ViewModels;
 using ABCRetailers.Services;
 
-using ABCRetailersFunctions.Models;
-
-
 namespace ABCRetailers.Controllers
 {
     public class OrderController : Controller
     {
-        private readonly IFunctionsApi _functionsApi;
-        private readonly ILogger<OrderController> _logger;
+        private readonly IFunctionsApi _api;
+        public OrderController(IFunctionsApi api) => _api = api;
 
-        public OrderController(IFunctionsApi functionsApi)
-        {
-            _functionsApi = functionsApi;
-        }
-
-        // -------------------- Index --------------------
+        // LIST
         public async Task<IActionResult> Index()
         {
-            var orderDtos = await _functionsApi.GetOrdersAsync();
-
-            // Map DTOs to MVC Models
-            var orders = orderDtos.Select(d => new Order
-            {
-                RowKey = d.OrderId ?? string.Empty,
-                CustomerId = d.CustomerId,
-                Username = d.Username,
-                ProductId = d.ProductId,
-                ProductName = d.ProductName,
-                OrderDate = d.OrderDate,
-                Quantity = d.Quantity,
-                UnitPrice = d.UnitPrice,
-                TotalPrice = d.TotalPrice,
-                Status = d.Status
-            }).ToList();
-
-            return View(orders);
+            var orders = await _api.GetOrdersAsync();
+            return View(orders.OrderByDescending(o => o.OrderDateUtc).ToList());
         }
 
-        // -------------------- Create --------------------
+        // -------------------- Create (GET) --------------------
+        //view for creation of order
         public async Task<IActionResult> Create()
         {
-            var viewModel = new OrderCreateViewModel();
-            await PopulateDropdowns(viewModel);
-            return View(viewModel);
+            var customers = await _api.GetCustomersAsync();
+            var products = await _api.GetProductsAsync();
+
+            var vm = new OrderCreateViewModel
+            {
+                Customers = customers,
+                Products = products
+            };
+            return View(vm);
         }
 
-        
-        [HttpPost]
-        [ValidateAntiForgeryToken]
+        // -------------------- Create (POST) --------------------
+        //handles submission of post
+        [HttpPost, ValidateAntiForgeryToken]
         public async Task<IActionResult> Create(OrderCreateViewModel model)
         {
             if (!ModelState.IsValid)
@@ -62,136 +45,80 @@ namespace ABCRetailers.Controllers
 
             try
             {
-                // 🚨 FIX HERE: Populate the lists NOW so the FirstOrDefault search works.
-                await PopulateDropdowns(model);
+                // Validate references 
+                var customer = await _api.GetCustomerAsync(model.CustomerId);
+                var product = await _api.GetProductAsync(model.ProductId);
 
-                // Validate IDs (your original check, unchanged)
-                if (string.IsNullOrWhiteSpace(model.CustomerId) || string.IsNullOrWhiteSpace(model.ProductId))
+                if (customer is null || product is null)
                 {
-                    ModelState.AddModelError("", "Please select both a customer and a product.");
-                    // We already called PopulateDropdowns above, so we can return the view.
+                    ModelState.AddModelError(string.Empty, "Invalid customer or product selected.");
+                    await PopulateDropdowns(model);
                     return View(model);
                 }
 
-                // Now, this search will work because the lists are populated.
-                var customer = model.Customers.FirstOrDefault(c => c.RowKey == model.CustomerId);
-                var product = model.Products.FirstOrDefault(p => p.RowKey == model.ProductId);
-
-                // If the selected ID is somehow invalid (not found in the DB), this check is still important.
-                if (customer == null || product == null)
+                if (product.StockAvailable < model.Quantity)
                 {
-                    ModelState.AddModelError("", "Invalid customer or product selection.");
-                    // Lists are already populated, just return view.
+                    ModelState.AddModelError("Quantity", $"Insufficient stock. Available: {product.StockAvailable}");
+                    await PopulateDropdowns(model);
                     return View(model);
                 }
 
-                // Log selected IDs for debugging
-                Console.WriteLine($"CustomerId: {model.CustomerId}, ProductId: {model.ProductId}");
-
-                // Build DTO
-                var orderDto = new OrderDto
-                {
-                    CustomerId = customer.RowKey,
-                    Username = customer.Username,
-                    ProductId = product.RowKey,
-                    ProductName = product.ProductName,
-                    Quantity = model.Quantity,
-                    UnitPrice = (double)product.Price,
-                    TotalPrice = (double)(product.Price * model.Quantity),
-                    OrderDate = DateTime.SpecifyKind(model.OrderDate, DateTimeKind.Utc),
-                    Status = string.IsNullOrWhiteSpace(model.Status) ? "Submitted" : model.Status
-                };
-
-                // Serialize JSON for logging
-                var options = new System.Text.Json.JsonSerializerOptions
-                {
-                    WriteIndented = true,
-                    DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull
-                };
-
-                var json = System.Text.Json.JsonSerializer.Serialize(orderDto, options);
-                Console.WriteLine("===== JSON SENT TO AZURE FUNCTION =====");
-                Console.WriteLine(json);
-                Console.WriteLine("=====================================");
-
-                // Send DTO to Azure Function
-                await _functionsApi.CreateOrderAsync(orderDto);
+                // Create order via Function (Function will set UTC time, snapshot price, update stock, enqueue messages)
+                var saved = await _api.CreateOrderAsync(model.CustomerId, model.ProductId, model.Quantity);
 
                 TempData["Success"] = "Order created successfully!";
                 return RedirectToAction(nameof(Index));
             }
             catch (Exception ex)
             {
-                ModelState.AddModelError("", $"Error creating order: {ex.Message}");
+                ModelState.AddModelError(string.Empty, $"Error creating order: {ex.Message}");
                 await PopulateDropdowns(model);
                 return View(model);
             }
         }
 
+        // DETAILS
+        public async Task<IActionResult> Details(string id)
+        {
+            if (string.IsNullOrWhiteSpace(id)) return NotFound();
+            var order = await _api.GetOrderAsync(id);
+            return order is null ? NotFound() : View(order);
+        }
 
-
-
-        // -------------------- Edit --------------------
+        // EDIT (GET) - typically only status is editable
         public async Task<IActionResult> Edit(string id)
         {
-            if (string.IsNullOrEmpty(id)) return NotFound();
-
-            var dto = await _functionsApi.GetOrderAsync(id);
-            if (dto == null) return NotFound();
-
-            // Map DTO to ViewModel for editing
-            var viewModel = new OrderCreateViewModel
-            {
-                CustomerId = dto.CustomerId,
-                ProductId = dto.ProductId,
-                Quantity = dto.Quantity,
-                OrderDate = dto.OrderDate,
-                Status = dto.Status
-            };
-            await PopulateDropdowns(viewModel);
-            return View(viewModel);
+            if (string.IsNullOrWhiteSpace(id)) return NotFound();
+            var order = await _api.GetOrderAsync(id);
+            return order is null ? NotFound() : View(order);
         }
 
-        [HttpPost]
-        [ValidateAntiForgeryToken]
-        public async Task<IActionResult> Edit(string id, OrderCreateViewModel model)
+        // EDIT (POST) - status only
+        [HttpPost, ValidateAntiForgeryToken]
+        public async Task<IActionResult> Edit(Order posted)
         {
-            if (!ModelState.IsValid)
-            {
-                await PopulateDropdowns(model);
-                return View(model);
-            }
+            if (!ModelState.IsValid) return View(posted);
 
             try
             {
-                // Build DTO to update order
-                var orderDto = new OrderDto
-                {
-                    OrderId = id,
-                    Status = model.Status,
-                    Quantity = model.Quantity
-                };
-
-                await _functionsApi.UpdateOrderStatusAsync(id, model.Status);
-
+                await _api.UpdateOrderStatusAsync(posted.Id, posted.Status.ToString());
                 TempData["Success"] = "Order updated successfully!";
                 return RedirectToAction(nameof(Index));
             }
             catch (Exception ex)
             {
-                ModelState.AddModelError("", $"Error updating order: {ex.Message}");
-                await PopulateDropdowns(model);
-                return View(model);
+                ModelState.AddModelError(string.Empty, $"Error updating order: {ex.Message}");
+                return View(posted);
             }
         }
 
-        // -------------------- Delete --------------------
+        // DELETE
         [HttpPost]
         public async Task<IActionResult> Delete(string id)
         {
             try
             {
-                await _functionsApi.DeleteOrderAsync(id);
+                await _api.DeleteOrderAsync(id);
                 TempData["Success"] = "Order deleted successfully!";
             }
             catch (Exception ex)
@@ -201,21 +128,21 @@ namespace ABCRetailers.Controllers
             return RedirectToAction(nameof(Index));
         }
 
-        // -------------------- AJAX: Product Price --------------------
+        // AJAX: price/stock lookup
         [HttpGet]
         public async Task<JsonResult> GetProductPrice(string productId)
         {
             try
             {
-                var productDto = await _functionsApi.GetProductAsync(productId);
-                if (productDto != null)
+                var product = await _api.GetProductAsync(productId);
+                if (product is not null)
                 {
                     return Json(new
                     {
                         success = true,
-                        price = productDto.Price,
-                        stock = productDto.StockAvailable,
-                        productName = productDto.ProductName
+                        price = product.Price,
+                        stock = product.StockAvailable,
+                        productName = product.ProductName
                     });
                 }
                 return Json(new { success = false });
@@ -226,13 +153,13 @@ namespace ABCRetailers.Controllers
             }
         }
 
-        // -------------------- AJAX: Update Order Status --------------------
+        // AJAX: status update
         [HttpPost]
         public async Task<IActionResult> UpdateOrderStatus(string id, string newStatus)
         {
             try
             {
-                await _functionsApi.UpdateOrderStatusAsync(id, newStatus);
+                await _api.UpdateOrderStatusAsync(id, newStatus);
                 return Json(new { success = true, message = $"Order status updated to {newStatus}" });
             }
             catch (Exception ex)
@@ -241,28 +168,10 @@ namespace ABCRetailers.Controllers
             }
         }
 
-        // -------------------- Helpers --------------------
         private async Task PopulateDropdowns(OrderCreateViewModel model)
         {
-            var customerDtos = await _functionsApi.GetCustomersAsync();
-            var productDtos = await _functionsApi.GetProductsAsync();
-
-            model.Customers = customerDtos.Select(d => new Customer
-            {
-                CustomerId = d.CustomerId,
-                Name = d.Name,
-                Surname = d.Surname,
-                Username = d.Username
-            }).ToList();
-
-            model.Products = productDtos.Select(d => new Product
-            {
-                ProductId = d.ProductId ?? string.Empty,
-                ProductName = d.ProductName,
-                Price = d.Price,
-                StockAvailable = d.StockAvailable,
-                ImageUrl = d.ImageUrl
-            }).ToList();
+            model.Customers = await _api.GetCustomersAsync();
+            model.Products = await _api.GetProductsAsync();
         }
     }
 }

@@ -1,131 +1,114 @@
-using System.Net;
-using Azure;
+using ABCRetailers.Functions.Entities;   // ? REQUIRED
+using ABCRetailers.Functions.Helpers;    // ? REQUIRED
+using ABCRetailers.Functions.Models;     // ? REQUIRED
 using Azure.Data.Tables;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Azure.Functions.Worker.Http;
-using ABCRetailersFunctions.Entities;
-using ABCRetailersFunctions.Helpers;
-using ABCRetailersFunctions.Models;
-using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Configuration;
 
-namespace ABCRetailersFunctions.Functions
+
+namespace ABCRetailers.Functions.Functions;
+public class CustomersFunctions
 {
-    public class CustomersFunctions
+    private readonly string _conn;
+    private readonly string _table;
+
+    public CustomersFunctions(IConfiguration cfg)
     {
-        private readonly TableServiceClient _tableServiceClient;
-        private readonly ILogger _logger;
-        private readonly string _tableName = Environment.GetEnvironmentVariable("TABLE_CUSTOMER") ?? "Customers";
+        _conn = cfg["STORAGE_CONNECTION"] ?? throw new InvalidOperationException("STORAGE_CONNECTION missing");
+        _table = cfg["TABLE_CUSTOMER"] ?? "Customer";
+    }
 
-        public CustomersFunctions(TableServiceClient tableServiceClient, ILogger<CustomersFunctions> logger)
+    [Function("Customers_List")]
+    public async Task<HttpResponseData> List(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "customers")] HttpRequestData req)
+    {
+        var table = new TableClient(_conn, _table);
+        await table.CreateIfNotExistsAsync();
+
+        var items = new List<CustomerDto>();
+        await foreach (var e in table.QueryAsync<CustomerEntity>(x => x.PartitionKey == "Customer"))
+            items.Add(Map.ToDto(e));
+
+        return HttpJson.Ok(req, items);
+    }
+
+    [Function("Customers_Get")]
+    public async Task<HttpResponseData> Get(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "customers/{id}")] HttpRequestData req, string id)
+    {
+        var table = new TableClient(_conn, _table);
+        try
         {
-            _tableServiceClient = tableServiceClient;
-            _logger = logger;
+            var e = await table.GetEntityAsync<CustomerEntity>("Customer", id);
+            return HttpJson.Ok(req, Map.ToDto(e.Value));
         }
-
-        private TableClient GetTableClient()
+        catch
         {
-            var tableClient = _tableServiceClient.GetTableClient(_tableName);
-            tableClient.CreateIfNotExists();
-            return tableClient;
+            return HttpJson.NotFound(req, "Customer not found");
         }
+    }
 
-        [Function("Customers_List")]
-        public async Task<HttpResponseData> List(
-            [HttpTrigger(AuthorizationLevel.Function, "get", Route = "customers")] HttpRequestData req)
+    public record CustomerCreateUpdate(string? Name, string? Surname, string? Username, string? Email, string? ShippingAddress);
+
+    [Function("Customers_Create")]
+    public async Task<HttpResponseData> Create(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "customers")] HttpRequestData req)
+    {
+        var input = await HttpJson.ReadAsync<CustomerCreateUpdate>(req);
+        if (input is null || string.IsNullOrWhiteSpace(input.Name) || string.IsNullOrWhiteSpace(input.Email))
+            return HttpJson.Bad(req, "Name and Email are required");
+
+        var table = new TableClient(_conn, _table);
+        await table.CreateIfNotExistsAsync();
+
+        var e = new CustomerEntity
         {
-            var table = GetTableClient();
-            var customers = table.Query<CustomerEntity>().Select(Map.ToDto).ToList();
+            Name = input.Name!,
+            Surname = input.Surname ?? "",
+            Username = input.Username ?? "",
+            Email = input.Email!,
+            ShippingAddress = input.ShippingAddress ?? ""
+        };
+        await table.AddEntityAsync(e);
 
-            var response = req.CreateResponse();
-            await response.WriteJsonAsync(customers);
-            return response;
-        }
+        return HttpJson.Created(req, Map.ToDto(e));
+    }
 
-        [Function("Customers_Get")]
-        public async Task<HttpResponseData> Get(
-            [HttpTrigger(AuthorizationLevel.Function, "get", Route = "customers/{id}")] HttpRequestData req,
-            string id)
+    [Function("Customers_Update")]
+    public async Task<HttpResponseData> Update(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "put", Route = "customers/{id}")] HttpRequestData req, string id)
+    {
+        var input = await HttpJson.ReadAsync<CustomerCreateUpdate>(req);
+        if (input is null) return HttpJson.Bad(req, "Invalid body");
+
+        var table = new TableClient(_conn, _table);
+        try
         {
-            var response = req.CreateResponse();
-            var table = GetTableClient();
+            var resp = await table.GetEntityAsync<CustomerEntity>("Customer", id);
+            var e = resp.Value;
 
-            try
-            {
-                var entity = await table.GetEntityAsync<CustomerEntity>("Customer", id);
-                await response.WriteJsonAsync(Map.ToDto(entity.Value));
-            }
-            catch (RequestFailedException ex) when (ex.Status == 404)
-            {
-                response.StatusCode = HttpStatusCode.NotFound;
-                await response.WriteTextAsync("Customer not found");
-            }
-            return response;
+            e.Name = input.Name ?? e.Name;
+            e.Surname = input.Surname ?? e.Surname;
+            e.Username = input.Username ?? e.Username;
+            e.Email = input.Email ?? e.Email;
+            e.ShippingAddress = input.ShippingAddress ?? e.ShippingAddress;
+
+            await table.UpdateEntityAsync(e, e.ETag, TableUpdateMode.Replace);
+            return HttpJson.Ok(req, Map.ToDto(e));
         }
-
-        [Function("Customers_Create")]
-        public async Task<HttpResponseData> Create(
-            [HttpTrigger(AuthorizationLevel.Function, "post", Route = "customers")] HttpRequestData req)
+        catch
         {
-            var dto = await HttpJson.ReadJsonAsync<CustomerDto>(req, _logger);
-            if (dto == null)
-                return req.CreateResponse(HttpStatusCode.BadRequest);
-
-            var table = GetTableClient();
-            var entity = Map.ToEntity(dto);
-            await table.AddEntityAsync(entity);
-
-            var response = req.CreateResponse();
-            await response.WriteJsonAsync(Map.ToDto(entity), HttpStatusCode.Created);
-            return response;
+            return HttpJson.NotFound(req, "Customer not found");
         }
+    }
 
-        [Function("Customers_Update")]
-        public async Task<HttpResponseData> Update(
-            [HttpTrigger(AuthorizationLevel.Function, "put", Route = "customers/{id}")] HttpRequestData req,
-            string id)
-        {
-            var dto = await HttpJson.ReadJsonAsync<CustomerDto>(req, _logger);
-            if (dto == null)
-                return req.CreateResponse(HttpStatusCode.BadRequest);
-
-            var table = GetTableClient();
-
-            try
-            {
-                var existing = await table.GetEntityAsync<CustomerEntity>("Customer", id);
-                var updated = Map.ToEntity(dto, existing.Value);
-                await table.UpdateEntityAsync(updated, existing.Value.ETag, TableUpdateMode.Replace);
-
-                var response = req.CreateResponse();
-                await response.WriteJsonAsync(Map.ToDto(updated));
-                return response;
-            }
-            catch (RequestFailedException ex) when (ex.Status == 404)
-            {
-                var response = req.CreateResponse(HttpStatusCode.NotFound);
-                await response.WriteTextAsync("Customer not found");
-                return response;
-            }
-        }
-
-        [Function("Customers_Delete")]
-        public async Task<HttpResponseData> Delete(
-            [HttpTrigger(AuthorizationLevel.Function, "delete", Route = "customers/{id}")] HttpRequestData req,
-            string id)
-        {
-            var table = GetTableClient();
-
-            try
-            {
-                await table.DeleteEntityAsync("Customer", id);
-                return req.CreateResponse(HttpStatusCode.NoContent);
-            }
-            catch (RequestFailedException ex) when (ex.Status == 404)
-            {
-                var response = req.CreateResponse(HttpStatusCode.NotFound);
-                await response.WriteTextAsync("Customer not found");
-                return response;
-            }
-        }
+    [Function("Customers_Delete")]
+    public async Task<HttpResponseData> Delete(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "delete", Route = "customers/{id}")] HttpRequestData req, string id)
+    {
+        var table = new TableClient(_conn, _table);
+        await table.DeleteEntityAsync("Customer", id);
+        return HttpJson.NoContent(req);
     }
 }

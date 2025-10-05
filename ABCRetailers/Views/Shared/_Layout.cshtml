@@ -1,12 +1,10 @@
 ﻿<!-- Views/Shared/_Layout.cshtml -->
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>@ViewData["Title"] - ABC Retailers</title>
-
     <link rel="stylesheet" href="~/lib/bootstrap/dist/css/bootstrap.min.css" />
     <link rel="stylesheet" href="~/css/site.css" asp-append-version="true" />
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" />
@@ -21,17 +19,11 @@
                 <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
                     <span class="navbar-toggler-icon"></span>
                 </button>
-
                 <div class="collapse navbar-collapse" id="navbarNav">
                     <ul class="navbar-nav me-auto">
                         <li class="nav-item">
                             <a class="nav-link" asp-area="" asp-controller="Home" asp-action="Index">
                                 <i class="fas fa-home"></i> Home
-                            </a>
-                        </li>
-                        <li class="nav-item">
-                            <a class="nav-link" asp-area="" asp-controller="Home" asp-action="ContactUs">
-                                <i class="fas fa-envelope"></i> Contact Us
                             </a>
                         </li>
                         <li class="nav-item">
@@ -55,8 +47,14 @@
                             </a>
                         </li>
                         <li class="nav-item">
+                            <a class="nav-link" asp-area="" asp-controller="Home" asp-action="ContactUs">
+                                <i class="fas fa-user"></i> Contact Us 
+                            </a>
+                        </li>
+                        <li class="nav-item">
                             <a class="nav-link" asp-area="" asp-controller="Home" asp-action="Privacy">
                                 <i class="fas fa-shield-alt"></i> Privacy
+
                             </a>
                         </li>
                     </ul>
@@ -75,7 +73,6 @@
                     <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
                 </div>
             }
-
             @if (TempData["Error"] != null)
             {
                 <div class="alert alert-danger alert-dismissible fade show mt-3" role="alert">
@@ -92,8 +89,7 @@
         <div class="container">
             <div class="row py-3">
                 <div class="col-md-6">
-                    &copy; 2025 - ABC Retailers -
-                    <a asp-area="" asp-controller="Home" asp-action="Privacy">Privacy</a>
+                    &copy; 2025 - ABC Retailers - <a asp-area="" asp-controller="Home" asp-action="Privacy">Privacy</a>
                 </div>
                 <div class="col-md-6 text-end">
                     <i class="fas fa-store"></i> Your one-stop shop for the best products

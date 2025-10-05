@@ -1,130 +1,64 @@
-﻿//using System.Net;
-//using Microsoft.Azure.Functions.Worker;
-//using Microsoft.Azure.Functions.Worker.Http;
-//using Microsoft.Extensions.Logging;
-//using ABCRetailersFunctions.Helpers;
-//using Azure.Storage.Blobs;
+﻿using ABCRetailers.Functions.Helpers;
 
-//namespace ABCRetailersFunctions.Functions
-//{
-//    public class UploadsFunctions
-//    {
-//        private readonly BlobServiceClient _blobServiceClient;
-//        private readonly ILogger _logger;
-//        private readonly string _blobContainerName = Environment.GetEnvironmentVariable("BLOB_PAYMENT_PROOFS") ?? "payment-proofs";
-
-//        public UploadsFunctions(BlobServiceClient blobServiceClient, ILogger<UploadsFunctions> logger)
-//        {
-//            _blobServiceClient = blobServiceClient;
-//            _logger = logger;
-//        }
-
-//        [Function("Uploads_ProofOfPayment")]
-//        public async Task<HttpResponseData> UploadProofOfPayment([HttpTrigger(AuthorizationLevel.Function, "post", Route = "uploads/proof-of-payment")] HttpRequestData req)
-//        {
-//            if (!MultipartHelper.IsMultipartContentType(req.Headers))
-//            {
-//                var badResp = req.CreateResponse(HttpStatusCode.BadRequest);
-//                await badResp.WriteTextAsync("Expected multipart/form-data content");
-//                return badResp;
-//            }
-
-//            var file = await MultipartHelper.GetFile(req);
-//            if (file == null)
-//            {
-//                var badResp = req.CreateResponse(HttpStatusCode.BadRequest);
-//                await badResp.WriteTextAsync("No file uploaded");
-//                return badResp;
-//            }
-
-//            try
-//            {
-//                var containerClient = _blobServiceClient.GetBlobContainerClient(_blobContainerName);
-//                await containerClient.CreateIfNotExistsAsync();
-
-//                var blobClient = containerClient.GetBlobClient(file.FileName);
-//                file.OpenReadStream().Position = 0;
-//                await blobClient.UploadAsync(file.OpenReadStream(), overwrite: true);
-
-//                var response = req.CreateResponse(HttpStatusCode.Created);
-//                await response.WriteJsonAsync(new { fileName = file.FileName, url = blobClient.Uri.ToString() });
-//                return response;
-//            }
-//            catch (Exception ex)
-//            {
-//                _logger.LogError(ex, "Failed to upload proof of payment");
-//                var errorResp = req.CreateResponse(HttpStatusCode.InternalServerError);
-//                await errorResp.WriteTextAsync("Upload failed");
-//                return errorResp;
-//            }
-//        }
-//    }
-//}
-
-
-using System.Net;
+using Azure.Storage.Blobs;
+using Azure.Storage.Files.Shares;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Azure.Functions.Worker.Http;
-using Microsoft.Extensions.Logging;
-using ABCRetailersFunctions.Helpers;
-using Azure.Storage.Blobs;
+using Microsoft.Extensions.Configuration;
 
-namespace ABCRetailersFunctions.Functions
+
+namespace ABCRetailers.Functions.Functions;
+public class UploadsFunctions
 {
-    public class UploadsFunctions
+    private readonly string _conn;
+    private readonly string _proofs;
+    private readonly string _share;
+    private readonly string _shareDir;
+
+    public UploadsFunctions(IConfiguration cfg)
     {
-        private readonly BlobServiceClient _blobServiceClient;
-        private readonly ILogger _logger;
-        private readonly string _blobContainerName = Environment.GetEnvironmentVariable("BLOB_PAYMENT_PROOFS") ?? "payment-proofs";
+        _conn = cfg["STORAGE_CONNECTION"] ?? throw new InvalidOperationException("STORAGE_CONNECTION missing");
+        _proofs = cfg["BLOB_PAYMENT_PROOFS"] ?? "payment-proofs";
+        _share = cfg["FILESHARE_CONTRACTS"] ?? "contracts";
+        _shareDir = cfg["FILESHARE_DIR_PAYMENTS"] ?? "payments";
+    }
 
-        public UploadsFunctions(BlobServiceClient blobServiceClient, ILogger<UploadsFunctions> logger)
-        {
-            _blobServiceClient = blobServiceClient;
-            _logger = logger;
-        }
+    [Function("Uploads_ProofOfPayment")]
+    public async Task<HttpResponseData> Proof(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "uploads/proof-of-payment")] HttpRequestData req)
+    {
+        var contentType = req.Headers.TryGetValues("Content-Type", out var ct) ? ct.First() : "";
+        if (!contentType.StartsWith("multipart/form-data", StringComparison.OrdinalIgnoreCase))
+            return HttpJson.Bad(req, "Expected multipart/form-data");
 
-        [Function("Uploads_ProofOfPayment")]
-        public async Task<HttpResponseData> UploadProofOfPayment(
-    [HttpTrigger(AuthorizationLevel.Function, "post", Route = "uploads/proof-of-payment")] HttpRequestData req)
-        {
-            if (!MultipartHelper.IsMultipartContentType(req.Headers))
-            {
-                var badResp = req.CreateResponse(HttpStatusCode.BadRequest);
-                await badResp.WriteTextAsync("Expected multipart/form-data content");
-                return badResp;
-            }
+        var form = await MultipartHelper.ParseAsync(req.Body, contentType);
+        var file = form.Files.FirstOrDefault(f => f.FieldName == "ProofOfPayment");
+        if (file is null || file.Data.Length == 0) return HttpJson.Bad(req, "ProofOfPayment file is required");
 
-            // ✅ Use the new helper
-            var multipartData = await MultipartHelper.ReadMultipartAsync(req);
-            var file = multipartData.Files.FirstOrDefault();
+        var orderId = form.Text.GetValueOrDefault("OrderId");
+        var customerName = form.Text.GetValueOrDefault("CustomerName");
 
-            if (file == null)
-            {
-                var badResp = req.CreateResponse(HttpStatusCode.BadRequest);
-                await badResp.WriteTextAsync("No file uploaded");
-                return badResp;
-            }
+        // Blob
+        var container = new BlobContainerClient(_conn, _proofs);
+        await container.CreateIfNotExistsAsync();
+        var blobName = $"{Guid.NewGuid():N}-{file.FileName}";
+        var blob = container.GetBlobClient(blobName);
+        await using (var s = file.Data) await blob.UploadAsync(s);
 
-            try
-            {
-                var containerClient = _blobServiceClient.GetBlobContainerClient(_blobContainerName);
-                await containerClient.CreateIfNotExistsAsync();
+        // Azure Files
+        var share = new ShareClient(_conn, _share);
+        await share.CreateIfNotExistsAsync();
+        var root = share.GetRootDirectoryClient();
+        var dir = root.GetSubdirectoryClient(_shareDir);
+        await dir.CreateIfNotExistsAsync();
 
-                var blobClient = containerClient.GetBlobClient(file.FileName);
-                file.OpenReadStream().Position = 0;
-                await blobClient.UploadAsync(file.OpenReadStream(), overwrite: true);
+        var fileClient = dir.GetFileClient(blobName + ".txt");
+        var meta = $"UploadedAtUtc: {DateTimeOffset.UtcNow:O}\nOrderId: {orderId}\nCustomerName: {customerName}\nBlobUrl: {blob.Uri}";
+        var bytes = System.Text.Encoding.UTF8.GetBytes(meta);
+        using var ms = new MemoryStream(bytes);
+        await fileClient.CreateAsync(ms.Length);
+        await fileClient.UploadAsync(ms);
 
-                var response = req.CreateResponse(HttpStatusCode.Created);
-                await response.WriteJsonAsync(new { fileName = file.FileName, url = blobClient.Uri.ToString() });
-                return response;
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Failed to upload proof of payment");
-                var errorResp = req.CreateResponse(HttpStatusCode.InternalServerError);
-                await errorResp.WriteTextAsync("Upload failed");
-                return errorResp;
-            }
-        }
+        return HttpJson.Ok(req, new { fileName = blobName, blobUrl = blob.Uri.ToString() });
     }
 }

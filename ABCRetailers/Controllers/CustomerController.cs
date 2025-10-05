@@ -1,84 +1,65 @@
-﻿using Microsoft.AspNetCore.Mvc;
-using ABCRetailersFunctions.Models; // Use Functions DTO
+﻿using System.Reflection.Metadata;
+using ABCRetailers.Models;
 using ABCRetailers.Services;
-
-
+using Microsoft.AspNetCore.Mvc;
+using static System.Net.Mime.MediaTypeNames;
 
 namespace ABCRetailers.Controllers
 {
+
+    //Handles all CRUD operations for Customer entities via the MVC application.
+   
     public class CustomerController : Controller
     {
-        private readonly IFunctionsApi _functionsApi;
+        private readonly IFunctionsApi _api;// Communicates with the Azure Functions API for all data interactions.
+        public CustomerController(IFunctionsApi api) => _api = api; //injecting Api 
 
-        public CustomerController(IFunctionsApi functionsApi)
+        public async Task<IActionResult> Index()//list
         {
-            _functionsApi = functionsApi;
-        }
-
-        // ---------------- Index ----------------
-        // GET: Customers
-        public async Task<IActionResult> Index()
-        {
-            var customers = await _functionsApi.GetCustomersAsync(); // returns List<CustomerDto>
+            var customers = await _api.GetCustomersAsync();
             return View(customers);
         }
+        // -------------------- Create (GET) --------------------
+        //view for creation of ccustomer
+        public IActionResult Create() => View();
 
-        // ---------------- Create ----------------
-        // GET: Customers/Create
-        public IActionResult Create()
+        // -------------------- Create (POST) --------------------
+        //handles submission of post
+        [HttpPost, ValidateAntiForgeryToken]
+        public async Task<IActionResult> Create(Customer customer)//breakpoint
         {
-            return View();
-        }
-
-        // POST: Customers/Create
-        [HttpPost]
-        [ValidateAntiForgeryToken]
-        public async Task<IActionResult> Create(CustomerDto customer)
-        {
-            if (!ModelState.IsValid)
-                return View(customer);
-
+            if (!ModelState.IsValid) return View(customer);   // Check for client-side and server-side validation errors
             try
             {
-                await _functionsApi.CreateCustomerAsync(customer);
+                // Call the Azure Functions API to persist the new customer
+                await _api.CreateCustomerAsync(customer);
                 TempData["Success"] = "Customer created successfully!";
                 return RedirectToAction(nameof(Index));
             }
             catch (Exception ex)
-            {
+            { // Log and display API errors to the user
                 ModelState.AddModelError("", $"Error creating customer: {ex.Message}");
                 return View(customer);
             }
         }
-
-        // ---------------- Edit ----------------
-        // GET: Customers/Edit/5
+        // -------------------- Edit (GET) --------------------
+        //displays view for editing customer
         public async Task<IActionResult> Edit(string id)
         {
-            if (string.IsNullOrEmpty(id))
-                return NotFound();
-
-            var customer = await _functionsApi.GetCustomerAsync(id); // returns CustomerDto
-            if (customer == null)
-                return NotFound();
-
-            return View(customer);
+            if (string.IsNullOrWhiteSpace(id)) return NotFound();
+            //grab customer via id
+            var customer = await _api.GetCustomerAsync(id);
+            return customer is null ? NotFound() : View(customer);
         }
-
-        // POST: Customers/Edit/5
-        [HttpPost]
-        [ValidateAntiForgeryToken]
-        public async Task<IActionResult> Edit(string id, CustomerDto customer)
+        //Handles the submission of the edited customer form.
+        [HttpPost, ValidateAntiForgeryToken]
+        public async Task<IActionResult> Edit(Customer customer)
         {
-            if (id != customer.CustomerId)
-                return BadRequest();
-
-            if (!ModelState.IsValid)
-                return View(customer);
-
+            if (!ModelState.IsValid) return View(customer);
             try
             {
-                await _functionsApi.UpdateCustomerAsync(id, customer);
+                // Call the Azure Functions API to update the customer record
+                await _api.UpdateCustomerAsync(customer.Id, customer);
                 TempData["Success"] = "Customer updated successfully!";
                 return RedirectToAction(nameof(Index));
             }
@@ -89,21 +70,18 @@ namespace ABCRetailers.Controllers
             }
         }
 
-        // ---------------- Delete ----------------
-        // POST: Customers/Delete/5
         [HttpPost]
         public async Task<IActionResult> Delete(string id)
         {
             try
             {
-                await _functionsApi.DeleteCustomerAsync(id);
+                await _api.DeleteCustomerAsync(id);
                 TempData["Success"] = "Customer deleted successfully!";
             }
             catch (Exception ex)
             {
                 TempData["Error"] = $"Error deleting customer: {ex.Message}";
             }
-
             return RedirectToAction(nameof(Index));
         }
     }

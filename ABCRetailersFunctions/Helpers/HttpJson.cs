@@ -1,44 +1,52 @@
-﻿using System.Net;
+﻿using Microsoft.Azure.Functions.Worker.Http;
+using System.Net;
+using System.Text;
 using System.Text.Json;
-using Microsoft.Azure.Functions.Worker.Http;
-using Microsoft.Extensions.Logging;
 
-namespace ABCRetailersFunctions.Helpers
+namespace ABCRetailers.Functions.Helpers;
+
+public static class HttpJson
 {
-    public static class HttpJson
+    static readonly JsonSerializerOptions _json = new(JsonSerializerDefaults.Web);
+
+    public static async Task<T?> ReadAsync<T>(HttpRequestData req)
     {
-        // Read JSON body and deserialize into T
-        public static async Task<T?> ReadJsonAsync<T>(HttpRequestData req, ILogger? logger = null)
-        {
-            try
-            {
-                return await JsonSerializer.DeserializeAsync<T>(req.Body, new JsonSerializerOptions
-                {
-                    PropertyNameCaseInsensitive = true
-                });
-            }
-            catch (Exception ex)
-            {
-                logger?.LogWarning(ex, "Failed to deserialize JSON request body");
-                return default;
-            }
-        }
+        using var s = req.Body;
+        return await JsonSerializer.DeserializeAsync<T>(s, _json);
+    }
 
+    public static HttpResponseData Ok<T>(HttpRequestData req, T body)
+        => Write(req, HttpStatusCode.OK, body);
 
-        // Write JSON to response
-        public static async Task WriteJsonAsync<T>(this HttpResponseData resp, T obj, HttpStatusCode statusCode = HttpStatusCode.OK)
-        {
-            resp.StatusCode = statusCode;
-            resp.Headers.Add("Content-Type", "application/json");
-            await resp.WriteStringAsync(JsonSerializer.Serialize(obj));
-        }
+    public static HttpResponseData Created<T>(HttpRequestData req, T body)
+        => Write(req, HttpStatusCode.Created, body);
 
-        // Write plain text
-        public static async Task WriteTextAsync(this HttpResponseData resp, string text, HttpStatusCode statusCode = HttpStatusCode.OK)
-        {
-            resp.StatusCode = statusCode;
-            resp.Headers.Add("Content-Type", "text/plain");
-            await resp.WriteStringAsync(text);
-        }
+    public static HttpResponseData Bad(HttpRequestData req, string message)
+        => Text(req, HttpStatusCode.BadRequest, message);
+
+    public static HttpResponseData NotFound(HttpRequestData req, string message = "Not Found")
+        => Text(req, HttpStatusCode.NotFound, message);
+
+    public static HttpResponseData NoContent(HttpRequestData req)
+    {
+        var r = req.CreateResponse(HttpStatusCode.NoContent);
+        return r;
+    }
+
+    public static HttpResponseData Text(HttpRequestData req, HttpStatusCode code, string message)
+    {
+        var r = req.CreateResponse(code);
+        r.Headers.Add("Content-Type", "text/plain; charset=utf-8");
+        r.WriteString(message, Encoding.UTF8);
+        return r;
+    }
+
+    private static HttpResponseData Write<T>(HttpRequestData req, HttpStatusCode code, T body)
+    {
+        var r = req.CreateResponse(code);
+        r.Headers.Add("Content-Type", "application/json; charset=utf-8");
+        var json = JsonSerializer.Serialize(body, _json);
+        r.WriteString(json, Encoding.UTF8);
+        return r;
     }
 }

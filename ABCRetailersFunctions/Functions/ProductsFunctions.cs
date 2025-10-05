@@ -1,343 +1,177 @@
-﻿using System.Net;
-using ABCRetailersFunctions.Entities;
-using ABCRetailersFunctions.Helpers;
-using ABCRetailersFunctions.Models;
-using Azure;
+﻿using ABCRetailers.Functions.Entities;  
+using ABCRetailers.Functions.Helpers;   
+using ABCRetailers.Functions.Models;     
 using Azure.Data.Tables;
 using Azure.Storage.Blobs;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Azure.Functions.Worker.Http;
-using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Configuration;
 
-namespace ABCRetailersFunctions.Functions
+
+
+namespace ABCRetailers.Functions.Functions;
+public class ProductsFunctions
 {
-    public class ProductsFunctions
+    private readonly string _conn;
+    private readonly string _table;
+    private readonly string _images;
+
+    public ProductsFunctions(IConfiguration cfg)
     {
-        private readonly TableServiceClient _tableServiceClient;
-        private readonly ILogger _logger;
-        private readonly string _tableName = Environment.GetEnvironmentVariable("TABLE_PRODUCT") ?? "Products";
+        _conn = cfg["STORAGE_CONNECTION"] ?? throw new InvalidOperationException("STORAGE_CONNECTION missing");
+        _table = cfg["TABLE_PRODUCT"] ?? "Products";
+        _images = cfg["BLOB_PRODUCT_IMAGES"] ?? "product-images";
+    }
+    //get list
+    [Function("Products_List")]
+    public async Task<HttpResponseData> List(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "products")] HttpRequestData req)
+    {
+        var table = new TableClient(_conn, _table);
+        await table.CreateIfNotExistsAsync();
 
-        public ProductsFunctions(TableServiceClient tableServiceClient, ILogger<ProductsFunctions> logger)
+        var items = new List<ProductDto>();
+        await foreach (var e in table.QueryAsync<ProductEntity>(x => x.PartitionKey == "Product"))
+            items.Add(Map.ToDto(e));
+
+        return HttpJson.Ok(req, items);
+    }
+    //get
+    [Function("Products_Get")]
+    public async Task<HttpResponseData> Get(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "products/{id}")] HttpRequestData req, string id)
+    {
+        var table = new TableClient(_conn, _table);
+        try
         {
-            _tableServiceClient = tableServiceClient;
-            _logger = logger;
+            var e = await table.GetEntityAsync<ProductEntity>("Product", id);
+            return HttpJson.Ok(req, Map.ToDto(e.Value));
         }
-
-        private TableClient GetTableClient()
+        catch
         {
-            var tableClient = _tableServiceClient.GetTableClient(_tableName);
-            tableClient.CreateIfNotExists();
-            return tableClient;
+            return HttpJson.NotFound(req, "Product not found");
         }
+    }
+    //post
+    [Function("Products_Create")]
+    public async Task<HttpResponseData> Create(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "products")] HttpRequestData req, FunctionContext ctx)
+    {
+        var contentType = req.Headers.TryGetValues("Content-Type", out var ct) ? ct.First() : "";
+        var table = new TableClient(_conn, _table);
+        await table.CreateIfNotExistsAsync();
 
-        [Function("Products_List")]
-        public async Task<HttpResponseData> List([HttpTrigger(AuthorizationLevel.Function, "get", Route = "products")] HttpRequestData req)
+        string name = "", desc = "", imageUrl = "";
+        double price = 0;
+        int stock = 0;
+
+        if (contentType.StartsWith("multipart/form-data", StringComparison.OrdinalIgnoreCase))
         {
-            var table = GetTableClient();
-            var products = table.Query<ProductEntity>().Select(Map.ToDto).ToList();
+            var form = await MultipartHelper.ParseAsync(req.Body, contentType);
+            name = form.Text.GetValueOrDefault("ProductName") ?? "";
+            desc = form.Text.GetValueOrDefault("Description") ?? "";
+            double.TryParse(form.Text.GetValueOrDefault("Price") ?? "0", out price);
+            int.TryParse(form.Text.GetValueOrDefault("StockAvailable") ?? "0", out stock);
 
-            var response = req.CreateResponse();
-            await response.WriteJsonAsync(products);
-            return response;
-        }
-
-        [Function("Products_Get")]
-        public async Task<HttpResponseData> Get([HttpTrigger(AuthorizationLevel.Function, "get", Route = "products/{id}")] HttpRequestData req, string id)
-        {
-            var response = req.CreateResponse();
-            var table = GetTableClient();
-
-            try
+            var file = form.Files.FirstOrDefault(f => f.FieldName == "ImageFile");
+            if (file is not null && file.Data.Length > 0)
             {
-                var entity = await table.GetEntityAsync<ProductEntity>("Product", id);
-                await response.WriteJsonAsync(Map.ToDto(entity.Value));
+                var container = new BlobContainerClient(_conn, _images);
+                await container.CreateIfNotExistsAsync();
+                var blob = container.GetBlobClient($"{Guid.NewGuid():N}-{file.FileName}");
+                await using var s = file.Data;
+                await blob.UploadAsync(s);
+                imageUrl = blob.Uri.ToString();
             }
-            catch (RequestFailedException ex) when (ex.Status == 404)
+            else
             {
-                response.StatusCode = HttpStatusCode.NotFound;
-                await response.WriteTextAsync("Product not found");
+                imageUrl = form.Text.GetValueOrDefault("ImageUrl") ?? "";
             }
-
-            return response;
         }
-        [Function("Products_Create")]
-        public async Task<HttpResponseData> Create(
-            [HttpTrigger(AuthorizationLevel.Function, "post", Route = "products")] HttpRequestData req)
+        else
         {
-            ProductDto dto;
+            // JSON fallback
+            var body = await HttpJson.ReadAsync<Dictionary<string, object>>(req) ?? new();
+            name = body.TryGetValue("ProductName", out var pn) ? pn?.ToString() ?? "" : "";
+            desc = body.TryGetValue("Description", out var d) ? d?.ToString() ?? "" : "";
+            price = body.TryGetValue("Price", out var pr) ? Convert.ToDouble(pr) : 0;
+            stock = body.TryGetValue("StockAvailable", out var st) ? Convert.ToInt32(st) : 0;
+            imageUrl = body.TryGetValue("ImageUrl", out var iu) ? iu?.ToString() ?? "" : "";
+        }
 
-            // Blob service setup
-            var blobService = new BlobServiceClient(Environment.GetEnvironmentVariable("StorageConnectionString"));
-            var containerName = "product-images";
-            var containerClient = blobService.GetBlobContainerClient(containerName);
-            await containerClient.CreateIfNotExistsAsync();
+        if (string.IsNullOrWhiteSpace(name))
+            return HttpJson.Bad(req, "ProductName is required");
 
-            if (MultipartHelper.IsMultipartContentType(req.Headers))
+        var e = new ProductEntity
+        {
+            ProductName = name,
+            Description = desc,
+            Price = price,
+            StockAvailable = stock,
+            ImageUrl = imageUrl
+        };
+        await table.AddEntityAsync(e);
+
+        return HttpJson.Created(req, Map.ToDto(e));
+    }
+    //put
+    [Function("Products_Update")]
+    public async Task<HttpResponseData> Update(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "put", Route = "products/{id}")] HttpRequestData req, string id)
+    {
+        var contentType = req.Headers.TryGetValues("Content-Type", out var ct) ? ct.First() : "";
+        var table = new TableClient(_conn, _table);
+        try
+        {
+            var resp = await table.GetEntityAsync<ProductEntity>("Product", id);
+            var e = resp.Value;
+
+            if (contentType.StartsWith("multipart/form-data", StringComparison.OrdinalIgnoreCase))
             {
-                // Handle multipart/form-data
-                var multipartData = await MultipartHelper.ReadMultipartAsync(req);
-                _logger.LogInformation("FormFields: {@fields}", multipartData.FormFields);
-                _logger.LogInformation("Files: {@files}", multipartData.Files.Select(f => f.FileName));
+                var form = await MultipartHelper.ParseAsync(req.Body, contentType);
 
-                var formFields = multipartData.FormFields;
-                var file = multipartData.Files.FirstOrDefault();
+                if (form.Text.TryGetValue("ProductName", out var name)) e.ProductName = name;
+                if (form.Text.TryGetValue("Description", out var desc)) e.Description = desc;
+                if (form.Text.TryGetValue("Price", out var priceTxt) && double.TryParse(priceTxt, out var price)) e.Price = price;
+                if (form.Text.TryGetValue("StockAvailable", out var stockTxt) && int.TryParse(stockTxt, out var stock)) e.StockAvailable = stock;
+                if (form.Text.TryGetValue("ImageUrl", out var iu)) e.ImageUrl = iu;
 
-                dto = new ProductDto
+                var file = form.Files.FirstOrDefault(f => f.FieldName == "ImageFile");
+                if (file is not null && file.Data.Length > 0)
                 {
-                    ProductName = formFields.GetValueOrDefault("ProductName", string.Empty),
-                    Description = formFields.GetValueOrDefault("Description", string.Empty),
-                    Price = double.TryParse(formFields.GetValueOrDefault("Price"), out var p) ? p : 0,
-                    StockAvailable = int.TryParse(formFields.GetValueOrDefault("StockAvailable"), out var s) ? s : 0
-                };
-
-                if (file != null)
-                {
-                    var blobName = $"{Guid.NewGuid()}_{file.FileName}";
-                    var blobClient = containerClient.GetBlobClient(blobName);
-
-                    using var stream = file.OpenReadStream();
-                    await blobClient.UploadAsync(stream, overwrite: true);
-
-                    dto.ImageUrl = blobClient.Uri.ToString();
+                    var container = new BlobContainerClient(_conn, _images);
+                    await container.CreateIfNotExistsAsync();
+                    var blob = container.GetBlobClient($"{Guid.NewGuid():N}-{file.FileName}");
+                    await using var s = file.Data;
+                    await blob.UploadAsync(s, overwrite: false);
+                    e.ImageUrl = blob.Uri.ToString();
                 }
             }
             else
             {
-                // Assume JSON
-                try
-                {
-                    dto = await HttpJson.ReadJsonAsync<ProductDto>(req, _logger);
-                    if (dto == null)
-                    {
-                        var badResp = req.CreateResponse(HttpStatusCode.BadRequest);
-                        await badResp.WriteTextAsync("Invalid JSON body");
-                        return badResp;
-                    }
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogError(ex, "Failed to parse JSON request body");
-                    var errorResp = req.CreateResponse(HttpStatusCode.BadRequest);
-                    await errorResp.WriteTextAsync("Invalid JSON format");
-                    return errorResp;
-                }
+                var body = await HttpJson.ReadAsync<Dictionary<string, object>>(req) ?? new();
+                if (body.TryGetValue("ProductName", out var pn)) e.ProductName = pn?.ToString() ?? e.ProductName;
+                if (body.TryGetValue("Description", out var d)) e.Description = d?.ToString() ?? e.Description;
+                if (body.TryGetValue("Price", out var pr) && double.TryParse(pr.ToString(), out var price)) e.Price = price;
+                if (body.TryGetValue("StockAvailable", out var st) && int.TryParse(st.ToString(), out var stock)) e.StockAvailable = stock;
+                if (body.TryGetValue("ImageUrl", out var iu)) e.ImageUrl = iu?.ToString() ?? e.ImageUrl;
             }
 
-            // Save to table
-            var table = GetTableClient();
-            var entity = Map.ToEntity(dto);
-            await table.AddEntityAsync(entity);
-
-            var response = req.CreateResponse(HttpStatusCode.Created);
-            await response.WriteJsonAsync(Map.ToDto(entity));
-            return response;
+            await table.UpdateEntityAsync(e, e.ETag, TableUpdateMode.Replace);
+            return HttpJson.Ok(req, Map.ToDto(e));
         }
-
-
-
-
-        //old
-        //[Function("Products_Create")]
-        //public async Task<HttpResponseData> Create([HttpTrigger(AuthorizationLevel.Function, "post", Route = "products")] HttpRequestData req)
-        //{
-        //    var dto = await HttpJson.ReadJsonAsync<ProductDto>(req, _logger);
-        //    if (dto == null) return req.CreateResponse(HttpStatusCode.BadRequest);
-
-        //    var table = GetTableClient();
-        //    var entity = Map.ToEntity(dto);
-        //    await table.AddEntityAsync(entity);
-
-        //    var response = req.CreateResponse();
-        //    await response.WriteJsonAsync(Map.ToDto(entity), HttpStatusCode.Created);
-        //    return response;
-        //}
-
-
-
-
-        //    [Function("Products_Update")]
-        //    public async Task<HttpResponseData> Update(
-        //[HttpTrigger(AuthorizationLevel.Function, "put", Route = "products/{id}")] HttpRequestData req,
-        //string id)
-        //    {
-        //        ProductDto dto;
-
-        //        // Blob service setup
-        //        var blobService = new BlobServiceClient(Environment.GetEnvironmentVariable("StorageConnectionString"));
-        //        var containerName = "product-images";
-        //        var containerClient = blobService.GetBlobContainerClient(containerName);
-        //        await containerClient.CreateIfNotExistsAsync();
-
-        //        if (MultipartHelper.IsMultipartContentType(req.Headers))
-        //        {
-        //            // Handle multipart/form-data
-        //            var multipartData = await MultipartHelper.ReadMultipartAsync(req);
-
-        //            var formFields = multipartData.FormFields;
-        //            var file = multipartData.Files.FirstOrDefault();
-
-        //            dto = new ProductDto
-        //            {
-        //                ProductName = formFields.GetValueOrDefault("ProductName", string.Empty),
-        //                Description = formFields.GetValueOrDefault("Description", string.Empty),
-        //                Price = double.TryParse(formFields.GetValueOrDefault("Price"), out var p) ? p : 0,
-        //                StockAvailable = int.TryParse(formFields.GetValueOrDefault("StockAvailable"), out var s) ? s : 0
-
-        //            };
-
-        //            if (file != null)
-        //            {
-        //                var blobName = $"{Guid.NewGuid()}_{file.FileName}";
-        //                var blobClient = containerClient.GetBlobClient(blobName);
-
-        //                using var stream = file.OpenReadStream();
-        //                await blobClient.UploadAsync(stream, overwrite: true);
-
-        //                dto.ImageUrl = blobClient.Uri.ToString();
-        //            }
-        //        }
-        //        else
-        //        {
-        //            // Assume JSON
-        //            try
-        //            {
-        //                dto = await HttpJson.ReadJsonAsync<ProductDto>(req, _logger);
-        //                if (dto == null)
-        //                {
-        //                    var badResp = req.CreateResponse(HttpStatusCode.BadRequest);
-        //                    await badResp.WriteTextAsync("Invalid JSON body");
-        //                    return badResp;
-        //                }
-        //            }
-        //            catch (Exception ex)
-        //            {
-        //                _logger.LogError(ex, "Failed to parse JSON request body");
-        //                var errorResp = req.CreateResponse(HttpStatusCode.BadRequest);
-        //                await errorResp.WriteTextAsync("Invalid JSON format");
-        //                return errorResp;
-        //            }
-        //        }
-
-        //        // Update table
-        //        var table = GetTableClient();
-        //        try
-        //        {
-        //            var existing = await table.GetEntityAsync<ProductEntity>("Product", id);
-        //            var updated = Map.ToEntity(dto, existing.Value);
-        //            if(string.IsNullOrEmpty(dto.ImageUrl))
-        //{
-        //                updated.ImageUrl = existing.Value.ImageUrl;
-        //            }
-
-        //            await table.UpdateEntityAsync(updated, existing.Value.ETag, TableUpdateMode.Replace);
-
-        //            var response = req.CreateResponse();
-        //            await response.WriteJsonAsync(Map.ToDto(updated));
-        //            return response;
-        //        }
-        //        catch (RequestFailedException ex) when (ex.Status == 404)
-        //        {
-        //            var response = req.CreateResponse(HttpStatusCode.NotFound);
-        //            await response.WriteTextAsync("Product not found");
-        //            return response;
-        //        }
-        //    }
-
-        [Function("Products_Update")]
-        public async Task<HttpResponseData> Update(
-    [HttpTrigger(AuthorizationLevel.Function, "put", Route = "products/{id}")] HttpRequestData req,
-    string id)
+        catch
         {
-            ProductDto dto;
-
-            var table = GetTableClient();
-            var existing = await table.GetEntityAsync<ProductEntity>("Product", id);
-
-            // Blob service setup
-            var blobService = new BlobServiceClient(Environment.GetEnvironmentVariable("StorageConnectionString"));
-            var containerName = "product-images";
-            var containerClient = blobService.GetBlobContainerClient(containerName);
-            await containerClient.CreateIfNotExistsAsync();
-
-            if (MultipartHelper.IsMultipartContentType(req.Headers))
-            {
-                var multipartData = await MultipartHelper.ReadMultipartAsync(req);
-                var formFields = multipartData.FormFields;
-                var file = multipartData.Files.FirstOrDefault();
-
-                dto = new ProductDto
-                {
-                    ProductName = formFields.GetValueOrDefault("ProductName", string.Empty),
-                    Description = formFields.GetValueOrDefault("Description", string.Empty),
-                    Price = double.TryParse(formFields.GetValueOrDefault("Price"), out var p) ? p : 0,
-                    StockAvailable = int.TryParse(formFields.GetValueOrDefault("StockAvailable"), out var s) ? s : 0,
-                    ImageUrl = file != null ? null : existing.Value.ImageUrl // now existing is defined
-                };
-
-                if (file != null)
-                {
-                    var blobName = $"{Guid.NewGuid()}_{file.FileName}";
-                    var blobClient = containerClient.GetBlobClient(blobName);
-
-                    using var stream = file.OpenReadStream();
-                    await blobClient.UploadAsync(stream, overwrite: true);
-
-                    dto.ImageUrl = blobClient.Uri.ToString();
-                }
-            }
-            else
-            {
-                try
-                {
-                    dto = await HttpJson.ReadJsonAsync<ProductDto>(req, _logger);
-                    if (dto == null)
-                    {
-                        var badResp = req.CreateResponse(HttpStatusCode.BadRequest);
-                        await badResp.WriteTextAsync("Invalid JSON body");
-                        return badResp;
-                    }
-
-                    // Preserve existing image if JSON body has no ImageUrl
-                    if (string.IsNullOrEmpty(dto.ImageUrl))
-                    {
-                        dto.ImageUrl = existing.Value.ImageUrl;
-                    }
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogError(ex, "Failed to parse JSON request body");
-                    var errorResp = req.CreateResponse(HttpStatusCode.BadRequest);
-                    await errorResp.WriteTextAsync("Invalid JSON format");
-                    return errorResp;
-                }
-            }
-
-            // Map and update table
-            var updated = Map.ToEntity(dto, existing.Value);
-            await table.UpdateEntityAsync(updated, existing.Value.ETag, TableUpdateMode.Replace);
-
-            var response = req.CreateResponse();
-            await response.WriteJsonAsync(Map.ToDto(updated));
-            return response;
+            return HttpJson.NotFound(req, "Product not found");
         }
-
-        //delete
-        [Function("Products_Delete")]
-        public async Task<HttpResponseData> Delete([HttpTrigger(AuthorizationLevel.Function, "delete", Route = "products/{id}")] HttpRequestData req, string id)
-        {
-            var table = GetTableClient();
-
-            try
-            {
-                await table.DeleteEntityAsync("Product", id);
-                return req.CreateResponse(HttpStatusCode.NoContent);
-            }
-            catch (RequestFailedException ex) when (ex.Status == 404)
-            {
-                var response = req.CreateResponse(HttpStatusCode.NotFound);
-                await response.WriteTextAsync("Product not found");
-                return response;
-            }
-        }
+    }
+    //delete
+    [Function("Products_Delete")]
+    public async Task<HttpResponseData> Delete(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "delete", Route = "products/{id}")] HttpRequestData req, string id)
+    {
+        var table = new TableClient(_conn, _table);
+        await table.DeleteEntityAsync("Product", id);
+        return HttpJson.NoContent(req);
     }
 }
