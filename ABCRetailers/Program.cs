@@ -1,5 +1,6 @@
-using ABCRetailers.Services;
 using System.Globalization;
+using ABCRetailers.Services;
+using Azure.Storage.Blobs;
 using Microsoft.AspNetCore.Http.Features;
 
 namespace ABCRetailers
@@ -34,7 +35,8 @@ namespace ABCRetailers
 
             //Add logging
             builder.Services.AddLogging();
-
+            // inside builder.Services section:
+            builder.Services.AddSingleton(new BlobServiceClient(builder.Configuration.GetConnectionString("AzureStorage")));
             var app = builder.Build();
 
             //Set the culture for decimal handling (Fixes price issue)

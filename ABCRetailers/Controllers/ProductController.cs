@@ -1,167 +1,221 @@
-﻿//using Microsoft.AspNetCore.Mvc;
-//using ABCRetailers.Services;
+﻿using Microsoft.AspNetCore.Mvc;
+using ABCRetailers.Services;
+using ABCRetailersFunctions.Models;
+using Azure.Storage.Blobs;
 
-//using ABCRetailersFunctions.Models; // Functions API DTO
-//using Azure.Storage.Blobs;
+namespace ABCRetailers.Controllers
+{
+    public class ProductController : Controller
+    {
+        private readonly IFunctionsApi _functionsApi;
+        private readonly BlobServiceClient _blobService;
+        private const string ContainerName = "product-images";
 
-//namespace ABCRetailers.Controllers
-//{
-//    public class ProductController : Controller
-//    {
-//        private readonly IFunctionsApi _functionsApi;
-//        private readonly BlobServiceClient _blobService;
+        public ProductController(IFunctionsApi functionsApi, BlobServiceClient blobService)
+        {
+            _functionsApi = functionsApi;
+            _blobService = blobService;
+        }
 
-//        private const string ContainerName = "product-images";
+        // GET: Products
+        public async Task<IActionResult> Index()
+        {
+            var products = await _functionsApi.GetProductsAsync();
+            return View(products); // Directly pass Functions DTO
+        }
 
-//        public ProductController(IFunctionsApi functionsApi, BlobServiceClient blobService)
-//        {
-//            _functionsApi = functionsApi;
-//            _blobService = blobService;
-//        }
+        // GET: Products/Create
+        public IActionResult Create() => View();
 
-//        // GET: Products
-//        public async Task<IActionResult> Index()
-//        {
-//            var apiProducts = await _functionsApi.GetProductsAsync(); // Functions DTO
-//            // Map to MVC DTO for the view
-//            var products = apiProducts.Select(p => new ProductDto
-//            {
-//                ProductId = p.ProductId,
-//                ProductName = p.ProductName,
-//                Description = p.Description,
-//                Price = p.Price,
-//                StockAvailable = p.StockAvailable,
-//                ImageUrl = p.ImageUrl
-//            });
-//            return View(products);
-//        }
+        //// POST: Products/Create
+        //[HttpPost]
+        //[ValidateAntiForgeryToken]
+        //public async Task<IActionResult> Create(ProductDto product, IFormFile? imageFile)
+        //{
+        //    if (!ModelState.IsValid)
+        //        return View(product);
 
-//        // GET: Products/Create
-//        public IActionResult Create() => View();
+        //    try
+        //    {
+        //        if (imageFile != null && imageFile.Length > 0)
+        //            product.ImageUrl = await UploadImageAsync(imageFile);
 
-//        // POST: Products/Create
-//        [HttpPost]
-//        [ValidateAntiForgeryToken]
-//        public async Task<IActionResult> Create(ProductDto product, IFormFile? imageFile)
-//        {
-//            if (!ModelState.IsValid) return View(product);
+        //        await _functionsApi.CreateProductAsync(product);
+        //        TempData["Success"] = "Product created successfully!";
+        //        return RedirectToAction(nameof(Index));
+        //    }
+        //    catch (Exception ex)
+        //    {
+        //        ModelState.AddModelError("", $"Error creating product: {ex.Message}");
+        //        return View(product);
+        //    }
+        //}
 
-//            try
-//            {
-//                if (imageFile != null && imageFile.Length > 0)
-//                {
-//                    product.ImageUrl = await UploadImageAsync(imageFile);
-//                }
+        [HttpPost]
+        [ValidateAntiForgeryToken]
+        public async Task<IActionResult> Create(ProductDto product, IFormFile? imageFile)
+        {
+            if (!ModelState.IsValid)
+                return View(product);
 
-//                // Map MVC DTO -> Functions DTO
-//                var apiDto = new ProductDto
-//                {
-//                    ProductId = product.ProductId,
-//                    ProductName = product.ProductName,
-//                    Description = product.Description,
-//                    Price = product.Price,
-//                    StockAvailable = product.StockAvailable,
-//                    ImageUrl = product.ImageUrl
-//                };
+            try
+            {
+                using var client = new HttpClient();
+                using var form = new MultipartFormDataContent();
 
-//                await _functionsApi.CreateProductAsync(apiDto);
-//                TempData["Success"] = "Product created successfully!";
-//                return RedirectToAction(nameof(Index));
-//            }
-//            catch (Exception ex)
-//            {
-//                ModelState.AddModelError("", $"Error creating product: {ex.Message}");
-//                return View(product);
-//            }
-//        }
+                // Add text fields
+                form.Add(new StringContent(product.ProductName ?? ""), "ProductName");
+                form.Add(new StringContent(product.Description ?? ""), "Description");
+                form.Add(new StringContent(product.Price.ToString()), "Price");
+                form.Add(new StringContent(product.StockAvailable.ToString()), "StockAvailable");
 
-//        // GET: Products/Edit/{id}
-//        public async Task<IActionResult> Edit(string id)
-//        {
-//            if (string.IsNullOrEmpty(id)) return NotFound();
+                // Add image file if present
+                if (imageFile != null && imageFile.Length > 0)
+                {
+                    var streamContent = new StreamContent(imageFile.OpenReadStream());
+                    streamContent.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(imageFile.ContentType);
+                    form.Add(streamContent, "file", imageFile.FileName);
+                }
 
-//            var apiProduct = await _functionsApi.GetProductAsync(id);
-//            if (apiProduct == null) return NotFound();
+                // Send to Azure Function
+                var response = await client.PostAsync("http://localhost:7251/api/products", form);
 
-//            // Map Functions DTO -> MVC DTO
-//            var product = new ProductDto
-//            {
-//                ProductId = apiProduct.ProductId,
-//                ProductName = apiProduct.ProductName,
-//                Description = apiProduct.Description,
-//                Price = apiProduct.Price,
-//                StockAvailable = apiProduct.StockAvailable,
-//                ImageUrl = apiProduct.ImageUrl
-//            };
+                if (response.IsSuccessStatusCode)
+                {
+                    TempData["Success"] = "Product created successfully!";
+                    return RedirectToAction(nameof(Index));
+                }
+                else
+                {
+                    var error = await response.Content.ReadAsStringAsync();
+                    ModelState.AddModelError("", $"Error creating product: {error}");
+                    return View(product);
+                }
+            }
+            catch (Exception ex)
+            {
+                ModelState.AddModelError("", $"Error creating product: {ex.Message}");
+                return View(product);
+            }
+        }
 
-//            return View(product);
-//        }
+        // GET: Products/Edit/{id}
+        public async Task<IActionResult> Edit(string id)
+        {
+            if (string.IsNullOrEmpty(id)) return NotFound();
 
-//        // POST: Products/Edit/{id}
-//        [HttpPost]
-//        [ValidateAntiForgeryToken]
-//        public async Task<IActionResult> Edit(string id, ProductDto product, IFormFile? imageFile)
-//        {
-//            if (id != product.ProductId) return BadRequest();
+            var product = await _functionsApi.GetProductAsync(id);
+            if (product == null) return NotFound();
 
-//            if (!ModelState.IsValid) return View(product);
+            return View(product); // Directly pass Functions DTO
+        }
 
-//            try
-//            {
-//                if (imageFile != null && imageFile.Length > 0)
-//                {
-//                    product.ImageUrl = await UploadImageAsync(imageFile);
-//                }
 
-//                var apiDto = new ProductDto
-//                {
-//                    ProductId = product.ProductId,
-//                    ProductName = product.ProductName,
-//                    Description = product.Description,
-//                    Price = product.Price,
-//                    StockAvailable = product.StockAvailable,
-//                    ImageUrl = product.ImageUrl
-//                };
 
-//                await _functionsApi.UpdateProductAsync(id, apiDto);
-//                TempData["Success"] = "Product updated successfully!";
-//                return RedirectToAction(nameof(Index));
-//            }
-//            catch (Exception ex)
-//            {
-//                ModelState.AddModelError("", $"Error updating product: {ex.Message}");
-//                return View(product);
-//            }
-//        }
+        //[HttpPost]
+        //[ValidateAntiForgeryToken]
+        //public async Task<IActionResult> Edit(string id, ProductDto product, IFormFile? imageFile)
+        //{
+        //    if (id != product.ProductId) return BadRequest();
+        //    if (!ModelState.IsValid) return View(product);
 
-//        // POST: Products/Delete/{id}
-//        [HttpPost]
-//        public async Task<IActionResult> Delete(string id)
-//        {
-//            try
-//            {
-//                await _functionsApi.DeleteProductAsync(id);
-//                TempData["Success"] = "Product deleted successfully!";
-//            }
-//            catch (Exception ex)
-//            {
-//                TempData["Error"] = $"Error deleting product: {ex.Message}";
-//            }
-//            return RedirectToAction(nameof(Index));
-//        }
+        //    try
+        //    {
+        //        if (imageFile != null && imageFile.Length > 0)
+        //            product.ImageUrl = await UploadImageAsync(imageFile);
 
-//        // ---------------- Helper for Blob Upload ----------------
-//        private async Task<string> UploadImageAsync(IFormFile imageFile)
-//        {
-//            var containerClient = _blobService.GetBlobContainerClient(ContainerName);
-//            await containerClient.CreateIfNotExistsAsync();
-//            var blobName = $"{Guid.NewGuid()}_{imageFile.FileName}";
-//            var blobClient = containerClient.GetBlobClient(blobName);
+        //        await _functionsApi.UpdateProductAsync(id, product);
+        //        TempData["Success"] = "Product updated successfully!";
+        //        return RedirectToAction(nameof(Index));
+        //    }
+        //    catch (Exception ex)
+        //    {
+        //        ModelState.AddModelError("", $"Error updating product: {ex.Message}");
+        //        return View(product);
+        //    }
+        //}
+        [HttpPost]
+        [ValidateAntiForgeryToken]
+        public async Task<IActionResult> Edit(string id, ProductDto product, IFormFile? imageFile)
+        {
+            if (id != product.ProductId) return BadRequest();
+            if (!ModelState.IsValid) return View(product);
 
-//            using var stream = imageFile.OpenReadStream();
-//            await blobClient.UploadAsync(stream, overwrite: true);
+            try
+            {
+                using var client = new HttpClient();
+                using var form = new MultipartFormDataContent();
 
-//            return blobClient.Uri.ToString();
-//        }
-//    }
-//}
+                // Add text fields
+                form.Add(new StringContent(product.ProductName ?? ""), "ProductName");
+                form.Add(new StringContent(product.Description ?? ""), "Description");
+                form.Add(new StringContent(product.Price.ToString()), "Price");
+                form.Add(new StringContent(product.StockAvailable.ToString()), "StockAvailable");
+
+                // Add file if present
+                if (imageFile != null && imageFile.Length > 0)
+                {
+                    var streamContent = new StreamContent(imageFile.OpenReadStream());
+                    streamContent.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(imageFile.ContentType);
+                    form.Add(streamContent, "file", imageFile.FileName);
+                }
+
+                // Log outgoing request details
+                Console.WriteLine($"Sending PUT to Function: ProductId={product.ProductId}, File={(imageFile?.FileName ?? "none")}");
+
+                var response = await client.PutAsync($"http://localhost:7251/api/products/{id}", form);
+
+                var responseBody = await response.Content.ReadAsStringAsync();
+                Console.WriteLine($"Function response: {response.StatusCode} - {responseBody}");
+
+                if (response.IsSuccessStatusCode)
+                {
+                    TempData["Success"] = "Product updated successfully!";
+                    return RedirectToAction(nameof(Index));
+                }
+                else
+                {
+                    ModelState.AddModelError("", $"Error updating product: {responseBody}");
+                    return View(product);
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Exception in Edit controller: {ex}");
+                ModelState.AddModelError("", $"Error updating product: {ex.Message}");
+                return View(product);
+            }
+        }
+
+
+        // POST: Products/Delete/{id}
+        [HttpPost]
+        public async Task<IActionResult> Delete(string id)
+        {
+            try
+            {
+                await _functionsApi.DeleteProductAsync(id);
+                TempData["Success"] = "Product deleted successfully!";
+            }
+            catch (Exception ex)
+            {
+                TempData["Error"] = $"Error deleting product: {ex.Message}";
+            }
+            return RedirectToAction(nameof(Index));
+        }
+
+        // Upload image to blob storage
+        private async Task<string> UploadImageAsync(IFormFile imageFile)
+        {
+            var containerClient = _blobService.GetBlobContainerClient(ContainerName);
+            await containerClient.CreateIfNotExistsAsync();
+            var blobName = $"{Guid.NewGuid()}_{imageFile.FileName}";
+            var blobClient = containerClient.GetBlobClient(blobName);
+
+            using var stream = imageFile.OpenReadStream();
+            await blobClient.UploadAsync(stream, overwrite: true);
+
+            return blobClient.Uri.ToString();
+        }
+    }
+}

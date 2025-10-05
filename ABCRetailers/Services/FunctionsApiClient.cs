@@ -108,28 +108,28 @@ namespace ABCRetailers.Services
             return await response.Content.ReadFromJsonAsync<OrderDto>()!;
         }
 
-        // ---------------- Mapping Helpers ----------------
-        private static Customer MapToCustomer(CustomerDto dto) => new Customer
-        {
-            RowKey = dto.CustomerId,
-            PartitionKey = "Customer",
-            Name = dto.Name,
-            Surname = dto.Surname,
-            Username = dto.Username,
-            Email = dto.Email,
-            ShippingAddress = dto.ShippingAddress,
-            ProfilePictureUrl = dto.ProfilePictureUrl
-        };
+        //// ---------------- Mapping Helpers ----------------
+        //private static Customer MapToCustomer(CustomerDto dto) => new Customer
+        //{
+        //    RowKey = dto.CustomerId,
+        //    PartitionKey = "Customer",
+        //    Name = dto.Name,
+        //    Surname = dto.Surname,
+        //    Username = dto.Username,
+        //    Email = dto.Email,
+        //    ShippingAddress = dto.ShippingAddress,
+        //    ProfilePictureUrl = dto.ProfilePictureUrl
+        //};
 
-        private static CustomerDto MapToCustomerDto(Customer c) => new CustomerDto
-        {
-            CustomerId = c.RowKey,
-            Name = c.Name,
-            Surname = c.Surname,
-            Username = c.Username,
-            Email = c.Email,
-            ShippingAddress = c.ShippingAddress,
-            ProfilePictureUrl = c.ProfilePictureUrl
-        };
+        //private static CustomerDto MapToCustomerDto(Customer c) => new CustomerDto
+        //{
+        //    CustomerId = c.RowKey,
+        //    Name = c.Name,
+        //    Surname = c.Surname,
+        //    Username = c.Username,
+        //    Email = c.Email,
+        //    ShippingAddress = c.ShippingAddress,
+        //    ProfilePictureUrl = c.ProfilePictureUrl
+        //};
     }
 }

@@ -12,19 +12,29 @@ namespace ABCRetailersFunctions.Functions
 {
     public class OrdersFunctions
     {
-        private readonly TableClient _tableClient;
+        private readonly TableServiceClient _tableServiceClient;
         private readonly ILogger _logger;
+        private readonly string _tableName = Environment.GetEnvironmentVariable("TABLE_ORDER") ?? "Orders";
 
-        public OrdersFunctions(TableClient tableClient, ILogger<OrdersFunctions> logger)
+        public OrdersFunctions(TableServiceClient tableServiceClient, ILogger<OrdersFunctions> logger)
         {
-            _tableClient = tableClient;
+            _tableServiceClient = tableServiceClient;
             _logger = logger;
+        }
+
+        private TableClient GetTableClient()
+        {
+            var tableClient = _tableServiceClient.GetTableClient(_tableName);
+            tableClient.CreateIfNotExists();
+            return tableClient;
         }
 
         [Function("Orders_List")]
         public async Task<HttpResponseData> List([HttpTrigger(AuthorizationLevel.Function, "get", Route = "orders")] HttpRequestData req)
         {
-            var orders = _tableClient.Query<OrderEntity>().Select(Map.ToDto).ToList();
+            var table = GetTableClient();
+            var orders = table.Query<OrderEntity>().Select(Map.ToDto).ToList();
+
             var response = req.CreateResponse();
             await response.WriteJsonAsync(orders);
             return response;
@@ -34,9 +44,11 @@ namespace ABCRetailersFunctions.Functions
         public async Task<HttpResponseData> Get([HttpTrigger(AuthorizationLevel.Function, "get", Route = "orders/{id}")] HttpRequestData req, string id)
         {
             var response = req.CreateResponse();
+            var table = GetTableClient();
+
             try
             {
-                var entity = await _tableClient.GetEntityAsync<OrderEntity>("Order", id);
+                var entity = await table.GetEntityAsync<OrderEntity>("Order", id);
                 await response.WriteJsonAsync(Map.ToDto(entity.Value));
             }
             catch (RequestFailedException ex) when (ex.Status == 404)
@@ -44,6 +56,7 @@ namespace ABCRetailersFunctions.Functions
                 response.StatusCode = HttpStatusCode.NotFound;
                 await response.WriteTextAsync("Order not found");
             }
+
             return response;
         }
 
@@ -51,11 +64,11 @@ namespace ABCRetailersFunctions.Functions
         public async Task<HttpResponseData> Create([HttpTrigger(AuthorizationLevel.Function, "post", Route = "orders")] HttpRequestData req)
         {
             var dto = await HttpJson.ReadJsonAsync<OrderDto>(req, _logger);
-            if (dto == null)
-                return req.CreateResponse(HttpStatusCode.BadRequest);
+            if (dto == null) return req.CreateResponse(HttpStatusCode.BadRequest);
 
+            var table = GetTableClient();
             var entity = Map.ToEntity(dto);
-            await _tableClient.AddEntityAsync(entity);
+            await table.AddEntityAsync(entity);
 
             var response = req.CreateResponse();
             await response.WriteJsonAsync(Map.ToDto(entity), HttpStatusCode.Created);
@@ -65,9 +78,11 @@ namespace ABCRetailersFunctions.Functions
         [Function("Orders_Delete")]
         public async Task<HttpResponseData> Delete([HttpTrigger(AuthorizationLevel.Function, "delete", Route = "orders/{id}")] HttpRequestData req, string id)
         {
+            var table = GetTableClient();
+
             try
             {
-                await _tableClient.DeleteEntityAsync("Order", id);
+                await table.DeleteEntityAsync("Order", id);
                 return req.CreateResponse(HttpStatusCode.NoContent);
             }
             catch (RequestFailedException ex) when (ex.Status == 404)
@@ -78,37 +93,30 @@ namespace ABCRetailersFunctions.Functions
             }
         }
 
-            [Function("Orders_UpdateStatus")]
-            public async Task<HttpResponseData> UpdateStatus([HttpTrigger(AuthorizationLevel.Function, "patch", "post", Route = "orders/{id}/status")] HttpRequestData req, string id)
+        [Function("Orders_UpdateStatus")]
+        public async Task<HttpResponseData> UpdateStatus([HttpTrigger(AuthorizationLevel.Function, "patch", "post", Route = "orders/{id}/status")] HttpRequestData req, string id)
+        {
+            var dto = await HttpJson.ReadJsonAsync<OrderDto>(req, _logger);
+            if (dto == null || string.IsNullOrEmpty(dto.Status)) return req.CreateResponse(HttpStatusCode.BadRequest);
+
+            var table = GetTableClient();
+
+            try
             {
-                var dto = await HttpJson.ReadJsonAsync<OrderDto>(req, _logger);
-                if (dto == null || string.IsNullOrEmpty(dto.Status))
-                    return req.CreateResponse(HttpStatusCode.BadRequest);
+                var existing = await table.GetEntityAsync<OrderEntity>("Order", id);
+                existing.Value.Status = dto.Status; // Update status only
+                await table.UpdateEntityAsync(existing.Value, existing.Value.ETag, TableUpdateMode.Replace);
 
-                try
-                {
-                    var existing = await _tableClient.GetEntityAsync<OrderEntity>("Order", id);
-                    existing.Value.Status = dto.Status; // Update status only
-                    await _tableClient.UpdateEntityAsync(existing.Value, existing.Value.ETag, TableUpdateMode.Replace);
-
-                    var response = req.CreateResponse();
-                    await response.WriteJsonAsync(Map.ToDto(existing.Value));
-                    return response;
-                }
-                catch (RequestFailedException ex) when (ex.Status == 404)
-                {
-                    var response = req.CreateResponse(HttpStatusCode.NotFound);
-                    await response.WriteTextAsync("Order not found");
-                    return response;
-                }
+                var response = req.CreateResponse();
+                await response.WriteJsonAsync(Map.ToDto(existing.Value));
+                return response;
             }
-
+            catch (RequestFailedException ex) when (ex.Status == 404)
+            {
+                var response = req.CreateResponse(HttpStatusCode.NotFound);
+                await response.WriteTextAsync("Order not found");
+                return response;
+            }
         }
     }
-
-
-
-
-
-
-
+}
