@@ -98,10 +98,11 @@ public class OrdersFunctions
         if (product.StockAvailable < input.Quantity)
             return HttpJson.Bad(req, $"Insufficient stock. Available: {product.StockAvailable}");
 
-        // Snapshot price & reduce stock (naïve; for concurrency use ETag preconditions)
+        // Snapshot price & reduce stock 
         var order = new OrderEntity
         {
             CustomerId = input.CustomerId,
+            Username = customer.Username,
             ProductId = input.ProductId,
             ProductName = product.ProductName,
             Quantity = input.Quantity,

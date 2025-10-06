@@ -1,4 +1,4 @@
-﻿// Models/ViewModels/OrderCreateViewModel.cs
+﻿
 using System.ComponentModel.DataAnnotations;
 
 namespace ABCRetailers.Models.ViewModels
@@ -8,7 +8,9 @@ namespace ABCRetailers.Models.ViewModels
         [Required]
         [Display(Name = "Customer")]
         public string CustomerId { get; set; } = string.Empty;
-
+        //[Required]
+        //[Display(Name = "Customer")]
+        //public string CustomerName { get; set; } = string.Empty;
         [Required]
         [Display(Name = "Product")]
         public string ProductId { get; set; } = string.Empty;

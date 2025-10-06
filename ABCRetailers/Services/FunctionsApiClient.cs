@@ -1,7 +1,9 @@
 ﻿using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using ABCRetailers.Models;
+using Humanizer;
 
 namespace ABCRetailers.Services;
 
@@ -115,7 +117,7 @@ public class FunctionsApiClient : IFunctionsApi
     public async Task DeleteProductAsync(string id)
         => (await _http.DeleteAsync($"{ProductsRoute}/{id}")).EnsureSuccessStatusCode();
 
-    // ---------- Orders (use DTOs → map to enum) ----------
+    // ---------- Orders ----------
     public async Task<List<Order>> GetOrdersAsync()
     {
         var dtos = await ReadJsonAsync<List<OrderDto>>(await _http.GetAsync(OrdersRoute));
@@ -174,6 +176,7 @@ public class FunctionsApiClient : IFunctionsApi
         {
             Id = d.Id,
             CustomerId = d.CustomerId,
+            Username = d.Username, // 🟢 This line MUST be present!
             ProductId = d.ProductId,
             ProductName = d.ProductName,
             Quantity = d.Quantity,
@@ -187,6 +190,7 @@ public class FunctionsApiClient : IFunctionsApi
     private sealed record OrderDto(
         string Id,
         string CustomerId,
+        [property: JsonPropertyName("username")] string Username,
         string ProductId,
         string ProductName,
         int Quantity,

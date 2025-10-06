@@ -10,6 +10,17 @@
         <i class="fas fa-plus"></i> Add New Customer
     </a>
 </div>
+<form method="get" asp-action="Index" class="mb-3">
+    <input type="text"
+           name="searchTerm"
+           value="@ViewData["SearchTerm"]"
+           placeholder="Search customers..."
+           class="form-control"
+           style="max-width: 300px; display:inline-block;" />
+    <button type="submit" class="btn btn-primary">Search</button>
+    <a asp-action="Index" class="btn btn-secondary">Clear</a>
+</form>
+
 
 @if (Model != null && Model.Any())
 {

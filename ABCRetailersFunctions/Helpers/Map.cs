@@ -35,6 +35,7 @@ public static class Map
         return new OrderDto(
             Id: e.RowKey,
             CustomerId: e.CustomerId,
+            Username: e.Username,//here
             ProductId: e.ProductId,
             ProductName: e.ProductName,
             Quantity: e.Quantity,

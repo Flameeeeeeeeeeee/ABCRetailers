@@ -14,11 +14,24 @@ namespace ABCRetailers.Controllers
         private readonly IFunctionsApi _api;// Communicates with the Azure Functions API for all data interactions.
         public CustomerController(IFunctionsApi api) => _api = api; //injecting Api 
 
-        public async Task<IActionResult> Index()//list
+        public async Task<IActionResult> Index(string? searchTerm)
         {
             var customers = await _api.GetCustomersAsync();
+
+            if (!string.IsNullOrWhiteSpace(searchTerm))
+            {
+                customers = customers
+                    .Where(c =>
+                        (c.Name != null && c.Name.Contains(searchTerm, StringComparison.OrdinalIgnoreCase)) ||//search bar here
+                        (c.Email != null && c.Email.Contains(searchTerm, StringComparison.OrdinalIgnoreCase)))
+                    
+                    .ToList();
+            }
+
+            ViewData["SearchTerm"] = searchTerm; // Pass term to the view to keep it in the input box
             return View(customers);
         }
+
         // -------------------- Create (GET) --------------------
         //view for creation of ccustomer
         public IActionResult Create() => View();

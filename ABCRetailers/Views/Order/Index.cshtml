@@ -33,7 +33,7 @@
                 {
                     <tr>
                         <td><code>@(order.Id?.Length > 8 ? order.Id[..8] + "…" : order.Id)</code></td>
-                        <td>@order.CustomerId</td>
+                        <td>@order.Username</td> <!--here-->
                         <td>@(!string.IsNullOrWhiteSpace(order.ProductName) ? order.ProductName : order.ProductId)</td>
                         <td>@FormatLocal(order.OrderDateUtc)</td>
                         <td>@order.Quantity</td>

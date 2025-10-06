@@ -22,6 +22,6 @@ public class QueueProcessorFunctions
     {
         var log = ctx.GetLogger("StockUpdates_Processor");
         log.LogInformation($"StockUpdates message: {message}");
-        /
+       
     }
 }

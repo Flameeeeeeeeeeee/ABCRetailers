@@ -1,6 +1,6 @@
-using ABCRetailers.Functions.Entities;   // ? REQUIRED
-using ABCRetailers.Functions.Helpers;    // ? REQUIRED
-using ABCRetailers.Functions.Models;     // ? REQUIRED
+using ABCRetailers.Functions.Entities;   
+using ABCRetailers.Functions.Helpers;    
+using ABCRetailers.Functions.Models;     
 using Azure.Data.Tables;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Azure.Functions.Worker.Http;

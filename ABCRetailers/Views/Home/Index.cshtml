@@ -70,10 +70,10 @@
                             <div class="card-body d-flex flex-column">
                                 <h6 class="card-title text-center mb-2">@product.ProductName</h6>
                                 <p class="card-text small text-muted text-center flex-grow-1">
-                                    @{
+                                    @* @{
                                         var desc = product.Description ?? "";
                                         @:(desc.Length > 60 ? desc.Substring(0, 60) + "…" : desc)
-                                    }
+                                    } *@
                                 </p>
                                 <div class="mt-auto text-center">
                                     <p class="mb-1"><strong class="text-success">@product.Price.ToString("C")</strong></p>
