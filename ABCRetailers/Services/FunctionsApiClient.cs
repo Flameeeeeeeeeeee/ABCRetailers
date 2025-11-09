@@ -195,7 +195,7 @@ public class FunctionsApiClient : IFunctionsApi
         string ProductName,
         int Quantity,
         decimal UnitPrice,
-        DateTimeOffset OrderDateUtc,
+        [property: JsonPropertyName("orderDateUtc")] DateTimeOffset OrderDateUtc,
         string Status);
 }
 

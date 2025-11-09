@@ -1,5 +1,4 @@
-﻿<!-- Views/Shared/_Layout.cshtml -->
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="utf-8" />
@@ -54,18 +53,18 @@
                         <li class="nav-item">
                             <a class="nav-link" asp-area="" asp-controller="Home" asp-action="Privacy">
                                 <i class="fas fa-shield-alt"></i> Privacy
-
                             </a>
                         </li>
                     </ul>
-                </div>
+                    
+                    <partial name="_LoginPartial" />
+                    </div>
             </div>
         </nav>
     </header>
 
     <div class="container-fluid">
         <main role="main" class="pb-3">
-            <!-- Alert Messages -->
             @if (TempData["Success"] != null)
             {
                 <div class="alert alert-success alert-dismissible fade show mt-3" role="alert">
@@ -88,10 +87,10 @@
     <footer class="border-top footer text-muted bg-light">
         <div class="container">
             <div class="row py-3">
-                <div class="col-md-6">
+                <div class="col-6">
                     &copy; 2025 - ABC Retailers - <a asp-area="" asp-controller="Home" asp-action="Privacy">Privacy</a>
                 </div>
-                <div class="col-md-6 text-end">
+                <div class="col-6 text-end">
                     <i class="fas fa-store"></i> Your one-stop shop for the best products
                 </div>
             </div>
