@@ -111,4 +111,38 @@ public class CustomersFunctions
         await table.DeleteEntityAsync("Customer", id);
         return HttpJson.NoContent(req);
     }
-}
+
+        //new function-------------------
+        [Function("Customers_GetByUsername")]
+        public async Task<HttpResponseData> GetByUsername(
+    [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "customers/username/{username}")] HttpRequestData req, string username)
+        {
+            var table = new TableClient(_conn, _table);
+            await table.CreateIfNotExistsAsync();
+
+            // --- THIS IS THE FIX ---
+            // We cannot reliably query by 'Username' in Table Storage.
+            // Instead, we must get all customers and filter them in our C# code.
+
+            var allCustomers = new List<CustomerEntity>();
+            await foreach (var e in table.QueryAsync<CustomerEntity>(c => c.PartitionKey == "Customer"))
+            {
+                allCustomers.Add(e);
+            }
+
+            // Now, find the matching customer using reliable C# LINQ
+            var customer = allCustomers.FirstOrDefault(c =>
+                c.Username.Equals(username, StringComparison.OrdinalIgnoreCase));
+
+            if (customer != null)
+            {
+                // Found a match, return it
+                return HttpJson.Ok(req, Map.ToDto(customer));
+            }
+            // --- END OF FIX ---
+
+            // No match was found
+            return HttpJson.NotFound(req, "Customer not found");
+        }
+    }
+

@@ -1,6 +1,7 @@
 ﻿using System.Reflection.Metadata;
 using ABCRetailers.Models;
 using ABCRetailers.Services;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using static System.Net.Mime.MediaTypeNames;
 
@@ -8,7 +9,8 @@ namespace ABCRetailers.Controllers
 {
 
     //Handles all CRUD operations for Customer entities via the MVC application.
-   
+
+    [Authorize(Roles = "Admin")]
     public class CustomerController : Controller
     {
         private readonly IFunctionsApi _api;// Communicates with the Azure Functions API for all data interactions.

@@ -1,9 +1,11 @@
-﻿using Microsoft.AspNetCore.Mvc;
-using ABCRetailers.Models;
+﻿using ABCRetailers.Models;
 using ABCRetailers.Services;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc;
 
 namespace ABCRetailers.Controllers
 {
+    [Authorize]
     public class ProductController : Controller
     {
         private readonly IFunctionsApi _api;
@@ -14,16 +16,18 @@ namespace ABCRetailers.Controllers
             _api = api;
             _logger = logger;
         }
-
+        [Authorize(Roles = "Admin,Customer")]
         public async Task<IActionResult> Index()
         {
             var products = await _api.GetProductsAsync();
             return View(products);
         }
-
+        [Authorize(Roles = "Admin")]
         public IActionResult Create() => View();
 
+
         [HttpPost, ValidateAntiForgeryToken]
+        [Authorize(Roles = "Admin")]
         public async Task<IActionResult> Create(Product product, IFormFile? imageFile)
         {
             if (!ModelState.IsValid) return View(product);
@@ -40,7 +44,7 @@ namespace ABCRetailers.Controllers
                 return View(product);
             }
         }
-
+        [Authorize(Roles = "Admin")]
         public async Task<IActionResult> Edit(string id)
         {
             if (string.IsNullOrWhiteSpace(id)) return NotFound();
@@ -49,6 +53,7 @@ namespace ABCRetailers.Controllers
         }
 
         [HttpPost, ValidateAntiForgeryToken]
+        [Authorize(Roles = "Admin")]
         public async Task<IActionResult> Edit(Product product, IFormFile? imageFile)
         {
             if (!ModelState.IsValid) return View(product);
@@ -66,7 +71,10 @@ namespace ABCRetailers.Controllers
             }
         }
 
+
+
         [HttpPost]
+        [Authorize(Roles = "Admin")]
         public async Task<IActionResult> Delete(string id)
         {
             try

@@ -2,9 +2,9 @@ using ABCRetailers.Services;
 using Azure.Storage.Blobs;
 using Microsoft.AspNetCore.Http.Features;
 using System.Globalization;
-using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
-using ABCRetailers.Data;
+using ABCRetailers.Data; // <-- Make sure this using is present
+using Microsoft.AspNetCore.Authentication.Cookies;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -13,13 +13,28 @@ var connectionString = builder.Configuration.GetConnectionString("DefaultConnect
     ?? throw new InvalidOperationException("Connection string 'DefaultConnection' not found.");
 
 // --- Register the SQL Database DbContext ---
-builder.Services.AddDbContext<ApplicationDbContext>(options =>
+// (This is still needed for your new Users and Cart tables)
+builder.Services.AddDbContext<AuthDbContext>(options =>
     options.UseSqlServer(connectionString));
 
-// --- Register ASP.NET Core Identity ---
-builder.Services.AddDefaultIdentity<IdentityUser>(options => options.SignIn.RequireConfirmedAccount = false)
-    .AddRoles<IdentityRole>() // Add role support
-    .AddEntityFrameworkStores<ApplicationDbContext>(); // Tell Identity to use your new DbContext
+// --- ADDED: Services for new MANUAL Cookie-based Login ---
+// This replaces the Identity services
+builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
+    .AddCookie(options =>
+    {
+        options.LoginPath = "/Login/Index"; // Path to your new login page
+        options.AccessDeniedPath = "/Home/AccessDenied"; // An "Access Denied" page
+        options.ExpireTimeSpan = TimeSpan.FromDays(7);
+        options.SlidingExpiration = true;
+    });
+
+builder.Services.AddAuthorization(options =>
+{
+    // Here we can define our "Admin" and "Customer" policies
+    options.AddPolicy("Admin", policy => policy.RequireRole("Admin"));
+    options.AddPolicy("Customer", policy => policy.RequireRole("Customer"));
+});
+// --- END ADDED BLOCK ---
 
 
 // Add services to the container
@@ -43,7 +58,8 @@ builder.Services.AddHttpClient<IFunctionsApi, FunctionsApiClient>(client =>
     client.Timeout = TimeSpan.FromSeconds(100);
 });
 
-// --- Services for the Shopping Cart (Session) ---
+// --- ADDED BACK: Services for Session ---
+// (Your professor's LoginController needs this)
 builder.Services.AddDistributedMemoryCache();
 builder.Services.AddSession(options =>
 {
@@ -51,6 +67,7 @@ builder.Services.AddSession(options =>
     options.Cookie.HttpOnly = true;
     options.Cookie.IsEssential = true;
 });
+// --- END ADDED BLOCK ---
 
 
 // Optional: allow larger Multipart Uploads (images, proofs, etc.)
@@ -69,25 +86,8 @@ builder.Services.AddSingleton(new BlobServiceClient(
 
 var app = builder.Build();
 
-
-// --- ADDED: Initialize the roles and admin user ---
-// This ensures roles and the admin user exist on startup
-using (var scope = app.Services.CreateScope())
-{
-    var services = scope.ServiceProvider;
-    try
-    {
-        // We are calling the seeder here
-        await DbInitializer.Initialize(services);
-    }
-    catch (Exception ex)
-    {
-        // Log errors if seeding fails
-        var logger = services.GetRequiredService<ILogger<Program>>();
-        logger.LogError(ex, "An error occurred while seeding the database.");
-    }
-}
-// --- END ADDED BLOCK ---
+// --- REMOVED: DbInitializer block ---
+// (Your database is now seeded with your SQL script)
 
 
 // Set culture for decimal handling
@@ -106,15 +106,19 @@ app.UseHttpsRedirection();
 app.UseStaticFiles();
 app.UseRouting();
 
-// --- Enable Session for Shopping Cart ---
+// --- ADDED BACK: Enable Session ---
+// (Must be called before UseAuthentication/UseAuthorization)
 app.UseSession();
+// --- END ADDED BLOCK ---
 
-// --- Enable Authentication ---
+// --- ADDED: UseAuthentication and UseAuthorization ---
+// (These are for the new manual cookie system)
 app.UseAuthentication();
 app.UseAuthorization();
+// --- END ADDED BLOCK ---
 
-// --- Map Razor Pages (for Identity's default login UI) ---
-app.MapRazorPages();
+// --- REMOVED: app.MapRazorPages() ---
+// (We are deleting the Areas/Identity folder)
 
 app.MapControllerRoute(
   name: "default",

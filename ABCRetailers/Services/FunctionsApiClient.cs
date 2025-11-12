@@ -46,9 +46,21 @@ public class FunctionsApiClient : IFunctionsApi
         return await ReadJsonAsync<Customer>(resp);
     }
 
+    // --- ADDED THIS METHOD ---
+    public async Task<Customer?> GetCustomerByUsernameAsync(string username)
+    {
+        // NOTE: This assumes your Azure Function has a route like "customers/username/{username}"
+        // If your professor's route is different (e.g., "customers?username=..."), we'll need to change this.
+        var resp = await _http.GetAsync($"{CustomersRoute}/username/{username}");
+        if (resp.StatusCode == System.Net.HttpStatusCode.NotFound) return null;
+        return await ReadJsonAsync<Customer>(resp);
+    }
+
+    // --- FIXED THIS METHOD (ADDED id = c.Id) ---
     public async Task<Customer> CreateCustomerAsync(Customer c)
         => await ReadJsonAsync<Customer>(await _http.PostAsync(CustomersRoute, JsonBody(new
         {
+            id = c.Id, // <-- THIS FIX IS CRITICAL
             name = c.Name,
             surname = c.Surname,
             username = c.Username,
@@ -148,6 +160,15 @@ public class FunctionsApiClient : IFunctionsApi
 
     public async Task DeleteOrderAsync(string id)
         => (await _http.DeleteAsync($"{OrdersRoute}/{id}")).EnsureSuccessStatusCode();
+
+    // --- ADDED THIS METHOD ---
+    public async Task<List<Order>> GetOrdersByCustomerIdAsync(string customerId)
+    {
+        // NOTE: This assumes your Azure Function has a route like "orders/customer/{customerId}"
+        var dtos = await ReadJsonAsync<List<OrderDto>>(await _http.GetAsync($"{OrdersRoute}/customer/{customerId}"));
+        return dtos.Select(ToOrder).ToList();
+    }
+
 
     // ---------- Uploads ----------
     public async Task<string> UploadProofOfPaymentAsync(IFormFile file, string? orderId, string? customerName)

@@ -1,9 +1,11 @@
+using System.Diagnostics;
 using ABCRetailers.Models;
 using ABCRetailers.Models.ViewModels;
 using ABCRetailers.Services;           // IFunctionsApi
+using Google.Protobuf.WellKnownTypes;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging;
-using System.Diagnostics;
 
 namespace ABCRetailers.Controllers
 {
@@ -18,27 +20,25 @@ namespace ABCRetailers.Controllers
             _logger = logger;
         }
 
+
+        [AllowAnonymous]
         public async Task<IActionResult> Index()
         {
             try
             {
                 // Start all three API calls (products, customers, and orders) at once
-                var productsTask = _api.GetProductsAsync();
-                var customersTask = _api.GetCustomersAsync();
-                var ordersTask = _api.GetOrdersAsync();
+                var products = await _api.GetProductsAsync() ?? new List<Product>();
 
-                await Task.WhenAll(productsTask, customersTask, ordersTask);
 
-                var products = productsTask.Result ?? new List<Product>();
-                var customers = customersTask.Result ?? new List<Customer>();
-                var orders = ordersTask.Result ?? new List<Order>();
 
+               
+          
                 var vm = new HomeViewModel
                 {
                     FeaturedProducts = products.Take(8).ToList(),
-                    ProductCount = products.Count,
-                    CustomerCount = customers.Count,
-                    OrderCount = orders.Count
+                    ProductCount = products.Count
+                    
+                  
                 };
 
                 return View(vm);
@@ -52,6 +52,64 @@ namespace ABCRetailers.Controllers
                 return View(new HomeViewModel());
             }
         }
+        // Add this method to your HomeController.cs
+        public IActionResult AccessDenied()
+        {
+            return View();
+        }
+
+        //====================
+        //ADMIN DASHBOARD
+        // ====================
+        [Authorize(Roles = "Admin")]
+        public async Task<IActionResult> AdminDashboard()
+        {
+            try
+            {
+                var customers = await _api.GetCustomersAsync() ?? new List<Customer>();
+                var orders = await _api.GetOrdersAsync() ?? new List<Order>();
+
+                var model = new
+                {
+                    TotalCustomers = customers.Count,
+                    TotalOrders = orders.Count
+                };
+
+                ViewBag.AdminSummary = model;
+                return View();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to load Admin Dashboard data.");
+                TempData["Error"] = "Could not load Admin Dashboard data.";
+                return View();
+            }
+        }
+
+
+
+        //====================
+        //CUSTOMER DASHBOARD
+        //====================
+        [Authorize(Roles = "Customer")]
+        public async Task<IActionResult> CustomerDashboard()
+        {
+            try
+            {
+                // Optional: You can later show user-specific order stats here
+                var userEmail = User.Identity?.Name;
+                ViewBag.UserEmail = userEmail;
+                return View();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to load Customer Dashboard data.");
+                TempData["Error"] = "Could not load your dashboard. Please try again.";
+                return View();
+            }
+        }
+
+        [AllowAnonymous]
         public IActionResult ContactUs() => View();
         public IActionResult Privacy() => View();
 
@@ -60,3 +118,4 @@ namespace ABCRetailers.Controllers
             => View(new ErrorViewModel { RequestId = Activity.Current?.Id ?? HttpContext.TraceIdentifier });
     }
 }
+

@@ -10,39 +10,103 @@
     <p class="lead">Your one-stop shop for the best deals and latest products</p>
 </div>
 
-<!-- Quick Actions -->
 <div class="row mb-5 g-3">
+
     <div class="col-md-3 col-sm-6">
-        <a asp-controller="Customer" asp-action="Index" class="btn btn-primary btn-lg w-100 h-100 d-flex flex-column justify-content-center">
-            <i class="fas fa-users fa-2x mb-2"></i>
-            <span>View Customers</span>
-            <small class="text-light">(@Model?.CustomerCount)</small>
-        </a>
+        @if (!User.Identity.IsAuthenticated)
+        {
+            <a asp-controller="Login" asp-action="Index"
+               class="btn btn-primary btn-lg w-100 h-100 d-flex flex-column justify-content-center">
+                <i class="fas fa-users fa-2x mb-2"></i>
+                <span>View Customers</span>
+                <small class="text-light">(@Model?.CustomerCount)</small>
+            </a>
+        }
+        else if (User.IsInRole("Admin")) // --- ADMINS ---
+        {
+            <a asp-controller="Customer" asp-action="Index"
+               class="btn btn-primary btn-lg w-100 h-100 d-flex flex-column justify-content-center">
+                <i class="fas fa-users fa-2x mb-2"></i>
+                <span>View Customers</span>
+                <small class="text-light">(@Model?.CustomerCount)</small>
+            </a>
+        }
+        else // --- CUSTOMERS ---
+        {
+            // Customers are denied access to the full customer list
+            <a asp-controller="Home" asp-action="AccessDenied"
+               class="btn btn-primary btn-lg w-100 h-100 d-flex flex-column justify-content-center">
+                <i class="fas fa-users fa-2x mb-2"></i>
+                <span>View Customers</span>
+                <small class="text-light">(@Model?.CustomerCount)</small>
+            </a>
+        }
     </div>
+
     <div class="col-md-3 col-sm-6">
-        <a asp-controller="Product" asp-action="Index" class="btn btn-success btn-lg w-100 h-100 d-flex flex-column justify-content-center">
+        @* This one is fine, as both roles can see the Product/Index *@
+        <a asp-controller="Product" asp-action="Index"
+           class="btn btn-success btn-lg w-100 h-100 d-flex flex-column justify-content-center">
             <i class="fas fa-box fa-2x mb-2"></i>
             <span>View Products</span>
             <small class="text-light">(@Model?.ProductCount)</small>
         </a>
     </div>
+
     <div class="col-md-3 col-sm-6">
-        <a asp-controller="Order" asp-action="Index" class="btn btn-warning btn-lg w-100 h-100 d-flex flex-column justify-content-center">
-            <i class="fas fa-shopping-cart fa-2x mb-2"></i>
-            <span>View Orders</span>
-            <small class="text-light">(@Model?.OrderCount)</small>
-        </a>
+        @if (!User.Identity.IsAuthenticated)
+        {
+            <a asp-controller="Login" asp-action="Index"
+               class="btn btn-warning btn-lg w-100 h-100 d-flex flex-column justify-content-center">
+                <i class="fas fa-shopping-cart fa-2x mb-2"></i>
+                <span>View Orders</span>
+                <small class="text-light">(@Model?.OrderCount)</small>
+            </a>
+        }
+        else if (User.IsInRole("Admin")) // --- ADMINS ---
+        {
+            // Admins go to the "Manage" (Index) page
+            <a asp-controller="Order" asp-action="Index"
+               class="btn btn-warning btn-lg w-100 h-100 d-flex flex-column justify-content-center">
+                <i class="fas fa-shopping-cart fa-2x mb-2"></i>
+                <span>View Orders</span>
+                <small class="text-light">(@Model?.OrderCount)</small>
+            </a>
+        }
+        else // --- CUSTOMERS ---
+        {
+            // Customers go to the "MyOrders" page
+            <a asp-controller="Order" asp-action="MyOrders"
+               class="btn btn-warning btn-lg w-100 h-100 d-flex flex-column justify-content-center">
+                <i class="fas fa-shopping-cart fa-2x mb-2"></i>
+                <span>View Orders</span>
+                <small class="text-light">(@Model?.OrderCount)</small>
+            </a>
+        }
     </div>
+
     <div class="col-md-3 col-sm-6">
-        <a asp-controller="Upload" asp-action="Index" class="btn btn-info btn-lg w-100 h-100 d-flex flex-column justify-content-center">
-            <i class="fas fa-upload fa-2x mb-2"></i>
-            <span>Upload Files</span>
-            <small class="text-light">(Payment proofs)</small>
-        </a>
+        @if (!User.Identity.IsAuthenticated)
+        {
+            <a asp-controller="Login" asp-action="Index"
+               class="btn btn-info btn-lg w-100 h-100 d-flex flex-column justify-content-center">
+                <i class="fas fa-upload fa-2x mb-2"></i>
+                <span>Upload Files</span>
+                <small class="text-light">(Payment proofs)</small>
+            </a>
+        }
+        else
+        {
+            <a asp-controller="Upload" asp-action="Index"
+               class="btn btn-info btn-lg w-100 h-100 d-flex flex-column justify-content-center">
+                <i class="fas fa-upload fa-2x mb-2"></i>
+                <span>Upload Files</span>
+                <small class="text-light">(Payment proofs)</small>
+            </a>
+        }
     </div>
 </div>
 
-<!-- Featured Products -->
 <div class="row">
     <div class="col-12">
         <h2 class="mb-4">
@@ -78,6 +142,7 @@
                                 <div class="mt-auto text-center">
                                     <p class="mb-1"><strong class="text-success">@product.Price.ToString("C")</strong></p>
                                     <small class="text-muted">Stock: @product.StockAvailable</small>
+                                    
                                 </div>
                             </div>
                         </div>
